@@ -30,19 +30,33 @@ KONG_DIR="$INFRA_DIR/templates/kong"
 
 mkdir -p "$PROJECTS_DIR/$PROJECT_REF/kong"
 
-# ─── Generate JWT keys ───────────────────────────────────────────────────────
-# Requires: node
-ANON_KEY=$(node - <<EOF
-const jwt = require('jsonwebtoken');
-console.log(jwt.sign({ role: 'anon', iss: 'supabase', iat: Math.floor(Date.now()/1000), exp: Math.floor(Date.now()/1000) + 315360000 }, '$JWT_SECRET', { algorithm: 'HS256' }));
-EOF
-)
+# ─── Generate JWT keys (pure bash, HS256) ───────────────────────────────────
+# RFC 7519 — HS256 = HMAC-SHA256(base64url(header).base64url(payload), secret)
+b64url() {
+  # base64url-encode stdin
+  openssl base64 -A | tr '+/' '-_' | tr -d '='
+}
+hmac_sha256_b64url() {
+  local msg="$1" key_hex="$2"
+  printf '%s' "$msg" | openssl dgst -sha256 -mac HMAC -macopt "hexkey:$key_hex" -binary | b64url
+}
+make_jwt() {
+  local role="$1" secret="$2"
+  local iat now_ts exp_ts
+  now_ts=$(date +%s)
+  exp_ts=$(( now_ts + 315360000 ))   # 10 years
+  local header payload
+  header=$(printf '{"alg":"HS256","typ":"JWT"}' | b64url)
+  payload=$(printf '{"role":"%s","iss":"supabase","iat":%d,"exp":%d}' "$role" "$now_ts" "$exp_ts" | b64url)
+  local sig
+  sig=$(hmac_sha256_b64url "${header}.${payload}" "$(printf '%s' "$secret" | xxd -p -c 256)")
+  printf '%s.%s.%s' "$header" "$payload" "$sig"
+}
 
-SERVICE_KEY=$(node - <<EOF
-const jwt = require('jsonwebtoken');
-console.log(jwt.sign({ role: 'service_role', iss: 'supabase', iat: Math.floor(Date.now()/1000), exp: Math.floor(Date.now()/1000) + 315360000 }, '$JWT_SECRET', { algorithm: 'HS256' }));
-EOF
-)
+JWT_SECRET_HEX=$(printf '%s' "$JWT_SECRET" | xxd -p -c 256)
+ANON_KEY=$(make_jwt "anon" "$JWT_SECRET")
+SERVICE_KEY=$(make_jwt "service_role" "$JWT_SECRET")
+REALTIME_SECRET_KEY_BASE=$(openssl rand -hex 64)
 
 SITE_URL="https://${PROJECT_REF}.mysuperdatabase.co"
 
@@ -52,7 +66,7 @@ echo "  anon_key:     ${ANON_KEY:0:20}..."
 echo "  service_key:  ${SERVICE_KEY:0:20}..."
 
 # ─── Generate Kong config ────────────────────────────────────────────────────
-export PROJECT_REF JWT_SECRET ANON_KEY SERVICE_KEY DB_PASSWORD SITE_URL
+export PROJECT_REF JWT_SECRET ANON_KEY SERVICE_KEY DB_PASSWORD SITE_URL REALTIME_SECRET_KEY_BASE
 export SMTP_HOST="${SMTP_HOST:-smtp.mysuperdatabase.com}"
 export SMTP_PORT="${SMTP_PORT:-587}"
 export SMTP_USER="${SMTP_USER:-}"
@@ -63,6 +77,11 @@ export MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-minioadmin}"
 
 envsubst < "$KONG_DIR/kong.yml.tpl" > "$PROJECTS_DIR/$PROJECT_REF/kong/${PROJECT_REF}.yml"
 echo "→ Kong config generated at $PROJECTS_DIR/$PROJECT_REF/kong/${PROJECT_REF}.yml"
+
+# ─── Generate DB init SQL ─────────────────────────────────────────────────────
+mkdir -p "$PROJECTS_DIR/$PROJECT_REF/db"
+envsubst < "$TEMPLATES_DIR/db/roles.sql.tpl" > "$PROJECTS_DIR/$PROJECT_REF/db/roles.sql"
+echo "→ DB roles.sql generated at $PROJECTS_DIR/$PROJECT_REF/db/roles.sql"
 
 # ─── Generate docker-compose ─────────────────────────────────────────────────
 envsubst < "$TEMPLATES_DIR/docker-compose.project.yml" > "$PROJECTS_DIR/$PROJECT_REF/docker-compose.yml"
@@ -78,11 +97,40 @@ else
   echo "  [WARN] mc not found — create bucket msd-${PROJECT_REF} manually in MinIO"
 fi
 
-# ─── Start via docker compose ─────────────────────────────────────────────────
-echo "→ Starting stack for $PROJECT_REF..."
+# ─── Start DB only first, set passwords, then start everything ───────────────
+echo "→ Starting DB for $PROJECT_REF..."
 docker compose -f "$PROJECTS_DIR/$PROJECT_REF/docker-compose.yml" \
   --project-name "msd-${PROJECT_REF}" \
-  up -d --wait 2>&1
+  up -d db 2>&1
+
+# Wait for DB to be healthy
+echo "→ Waiting for DB to be ready..."
+until docker compose -f "$PROJECTS_DIR/$PROJECT_REF/docker-compose.yml" \
+  --project-name "msd-${PROJECT_REF}" \
+  exec -T db pg_isready -U postgres -h 127.0.0.1 > /dev/null 2>&1; do
+  sleep 2
+done
+
+# Run init SQL: set passwords, fix ownership, create _realtime schema, set JWT settings
+echo "→ Running DB init SQL..."
+docker compose -f "$PROJECTS_DIR/$PROJECT_REF/docker-compose.yml" \
+  --project-name "msd-${PROJECT_REF}" \
+  exec -T db psql -U supabase_admin -h 127.0.0.1 \
+  -f /docker-entrypoint-initdb.d/init-scripts/99-roles.sql 2>&1
+
+# Seed default edge function (main entrypoint) into the functions volume
+echo "→ Seeding default edge function..."
+FUNCTIONS_VOLUME="msd-${PROJECT_REF}-functions"
+docker run --rm \
+  -v "${FUNCTIONS_VOLUME}:/home/deno/functions" \
+  -v "${TEMPLATES_DIR}/functions:/templates:ro" \
+  busybox sh -c "cp -r /templates/. /home/deno/functions/" 2>&1 || true
+
+# Start remaining services
+echo "→ Starting all services for $PROJECT_REF..."
+docker compose -f "$PROJECTS_DIR/$PROJECT_REF/docker-compose.yml" \
+  --project-name "msd-${PROJECT_REF}" \
+  up -d 2>&1
 
 echo ""
 echo "✓ Project $PROJECT_REF provisioned successfully"
