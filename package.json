@@ -1,8 +1,8 @@
 {
-  "name": "supabase",
-  "description": "The Postgres Development Platform.",
+  "name": "mysuperdatabase",
+  "description": "The open-source Supabase alternative.",
   "version": "0.0.0",
-  "author": "Supabase, Inc.",
+  "author": "H Consulting",
   "license": "Apache-2.0",
   "private": true,
   "scripts": {
@@ -61,7 +61,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/supabase/supabase.git"
+    "url": "git+https://github.com/hectoropenclaw/mysuperdatabase.git"
   },
   "engines": {
     "pnpm": "10.24",

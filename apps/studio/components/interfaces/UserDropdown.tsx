@@ -116,7 +116,7 @@ export function UserDropdown({
               </DropdownMenuItem>
               <DropdownMenuItem className="flex gap-2 cursor-pointer" asChild>
                 <Link
-                  href="https://supabase.com/changelog"
+                  href="https://mysuperdatabase.com/changelog"
                   target="_blank"
                   rel="noopener noreferrer"
                 >
