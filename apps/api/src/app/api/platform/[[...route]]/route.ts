@@ -651,6 +651,210 @@ app.delete('/auth/:ref/templates/:template/reset', async (c) => {
 // ─── GET /platform/auth/{ref}/validate/spam ───────────────────────────────────
 app.get('/auth/:ref/validate/spam', (c) => c.json({ is_spam: false }))
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// PG-META PROXY — forward /platform/pg-meta/{ref}/* to project's Kong /pg/* route
+// Studio passes x-connection-encrypted; we ignore it and auth via service_role_key
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function getProjectKongCreds(ref: string, userId: string) {
+  const { rows } = await pool.query(
+    `SELECT p.service_role_key, p.site_url, p.status
+     FROM projects p
+     JOIN org_members om ON om.org_id = p.org_id
+     WHERE p.ref=$1 AND om.user_id=$2 AND p.status='active'`,
+    [ref, userId]
+  )
+  return rows[0] ?? null
+}
+
+// Handles all HTTP methods for /platform/pg-meta/:ref/*
+const pgMetaProxy = async (c: any) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const creds = await getProjectKongCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Project not found or not active' }, 404)
+
+  // Strip /api/platform/pg-meta/{ref} prefix to get the pg-meta path
+  const rawPath = c.req.path.replace(`/api/platform/pg-meta/${ref}`, '') || '/'
+  const rawQuery = new URL(c.req.url).search
+
+  const targetUrl = `${creds.site_url}/pg${rawPath}${rawQuery}`
+
+  const upstreamHeaders: Record<string, string> = {
+    apikey: creds.service_role_key,
+    Authorization: `Bearer ${creds.service_role_key}`,
+    'Content-Type': 'application/json',
+    'x-pg-application-name': 'mysuperdatabase-studio',
+  }
+
+  const method = c.req.method
+  let body: string | undefined
+  if (['POST', 'PUT', 'PATCH'].includes(method)) {
+    body = await c.req.text()
+  }
+
+  try {
+    const upstream = await fetch(targetUrl, {
+      method,
+      headers: upstreamHeaders,
+      body,
+    })
+
+    const responseBody = await upstream.text()
+    return new Response(responseBody, {
+      status: upstream.status,
+      headers: {
+        'Content-Type': upstream.headers.get('Content-Type') ?? 'application/json',
+      },
+    })
+  } catch (err: any) {
+    console.error(`[pg-meta proxy] ${ref} → ${targetUrl}:`, err.message)
+    return c.json({ message: 'pg-meta upstream unreachable', error: err.message }, 503)
+  }
+}
+
+app.get('/pg-meta/:ref/*', pgMetaProxy)
+app.post('/pg-meta/:ref/*', pgMetaProxy)
+app.put('/pg-meta/:ref/*', pgMetaProxy)
+app.patch('/pg-meta/:ref/*', pgMetaProxy)
+app.delete('/pg-meta/:ref/*', pgMetaProxy)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PROJECT OPERATIONS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── POST /platform/projects/:ref/restart ─────────────────────────────────────
+app.post('/projects/:ref/restart', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const { rows } = await pool.query(
+    `SELECT p.ref FROM projects p JOIN org_members om ON om.org_id=p.org_id
+     WHERE p.ref=$1 AND om.user_id=$2 AND p.status='active'`,
+    [ref, userId]
+  )
+  if (!rows.length) return c.json({ message: 'Not found' }, 404)
+
+  execAsync(`bash "${SCRIPTS_DIR}/restart-project.sh" "${ref}"`).catch((err) =>
+    console.error(`[restart] ${ref}:`, err.message)
+  )
+  return c.json({ message: 'Restart initiated' })
+})
+
+// ─── POST /platform/projects/:ref/restart-services ────────────────────────────
+app.post('/projects/:ref/restart-services', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const { rows } = await pool.query(
+    `SELECT p.ref FROM projects p JOIN org_members om ON om.org_id=p.org_id
+     WHERE p.ref=$1 AND om.user_id=$2 AND p.status='active'`,
+    [ref, userId]
+  )
+  if (!rows.length) return c.json({ message: 'Not found' }, 404)
+
+  const body = await c.req.json().catch(() => ({}))
+  const services: string[] = body.services ?? []
+  const serviceArgs = services.join(' ')
+
+  execAsync(`bash "${SCRIPTS_DIR}/restart-project.sh" "${ref}" ${serviceArgs}`).catch((err) =>
+    console.error(`[restart-services] ${ref}:`, err.message)
+  )
+  return c.json({ message: 'Service restart initiated', services })
+})
+
+// ─── GET /platform/projects/:ref/run-lints ────────────────────────────────────
+// Proxied to pg-meta's /advisors endpoint if active, otherwise stub
+app.get('/projects/:ref/run-lints', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const creds = await getProjectKongCreds(ref, userId)
+  if (!creds) return c.json([])
+
+  try {
+    const res = await fetch(`${creds.site_url}/pg/advisors`, {
+      headers: {
+        apikey: creds.service_role_key,
+        Authorization: `Bearer ${creds.service_role_key}`,
+      },
+    })
+    const data = await res.json().catch(() => [])
+    return c.json(Array.isArray(data) ? data : [])
+  } catch {
+    return c.json([])
+  }
+})
+
+// ─── GET /platform/projects/:ref/status ───────────────────────────────────────
+app.get('/projects/:ref/status', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const { rows } = await pool.query(
+    `SELECT p.status, p.site_url, p.service_role_key FROM projects p
+     JOIN org_members om ON om.org_id=p.org_id
+     WHERE p.ref=$1 AND om.user_id=$2 AND p.status != 'deleted'`,
+    [ref, userId]
+  )
+  if (!rows.length) return c.json({ message: 'Not found' }, 404)
+  const p = rows[0]
+
+  // If active, probe PostgREST health
+  if (p.status === 'active' && p.site_url) {
+    try {
+      const health = await fetch(`${p.site_url}/rest/v1/`, {
+        headers: { apikey: p.service_role_key },
+        signal: AbortSignal.timeout(3000),
+      })
+      return c.json({ status: health.ok ? 'ACTIVE_HEALTHY' : 'ACTIVE_UNHEALTHY' })
+    } catch {
+      return c.json({ status: 'ACTIVE_UNHEALTHY' })
+    }
+  }
+
+  return c.json({
+    status: p.status === 'provisioning' ? 'COMING_UP' : p.status?.toUpperCase() ?? 'UNKNOWN',
+  })
+})
+
+// ─── GET /platform/projects/:ref/connection-string ────────────────────────────
+app.get('/projects/:ref/connection-string', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const { rows } = await pool.query(
+    `SELECT p.db_password, p.site_url FROM projects p
+     JOIN org_members om ON om.org_id=p.org_id
+     WHERE p.ref=$1 AND om.user_id=$2 AND p.status='active'`,
+    [ref, userId]
+  )
+  if (!rows.length) return c.json({ message: 'Not found' }, 404)
+  const { db_password, site_url } = rows[0]
+  return c.json({
+    uri: `postgresql://postgres:${db_password}@db.${ref}.mysuperdatabase.co:5432/postgres`,
+    pooler_uri: null,
+    host: `db.${ref}.mysuperdatabase.co`,
+    port: 5432,
+    database: 'postgres',
+    user: 'postgres',
+    password: db_password,
+    sslmode: 'require',
+  })
+})
+
+// ─── GET /platform/projects/:ref/resources/:id ────────────────────────────────
+// Studio calls this for compute size display; return a stub
+app.get('/projects/:ref/resources/:id', (c) => {
+  return c.json({
+    identifier: 'ci_micro',
+    name: 'Micro',
+    type: 'compute_instance',
+    price: 0,
+    price_interval: 'monthly',
+  })
+})
+
+// ─── POST /platform/projects/:ref/transfer ────────────────────────────────────
+app.post('/projects/:ref/transfer', (c) =>
+  c.json({ message: 'Project transfer not supported' }, 501)
+)
+
 // ─── Catch-all: 404 for unimplemented endpoints ───────────────────────────────
 app.all('*', (c) => c.json({ message: 'Not implemented' }, 404))
 
@@ -661,6 +865,8 @@ function generateRef(): string {
 }
 
 function projectToStudioShape(p: any) {
+  const siteUrl = p.site_url ?? `https://${p.ref}.mysuperdatabase.co`
+  const isActive = p.status === 'active'
   return {
     id: p.id,
     ref: p.ref,
@@ -668,12 +874,22 @@ function projectToStudioShape(p: any) {
     organization_id: p.org_id,
     cloud_provider: 'SELF_HOSTED',
     region: 'us-east-1',
-    status: p.status === 'active' ? 'ACTIVE_HEALTHY' : p.status === 'provisioning' ? 'COMING_UP' : p.status?.toUpperCase() ?? 'INACTIVE',
+    status: isActive ? 'ACTIVE_HEALTHY' : p.status === 'provisioning' ? 'COMING_UP' : p.status?.toUpperCase() ?? 'INACTIVE',
     inserted_at: p.created_at,
-    updated_at: p.updated_at,
+    updated_at: p.updated_at ?? p.created_at,
     disk_volume_size_gb: 8,
-    restUrl: p.site_url ? `${p.site_url}/rest/v1` : null,
-    endpoint: p.site_url ? p.site_url : `https://${p.ref}.mysuperdatabase.co`,
+    restUrl: isActive ? `${siteUrl}/rest/v1` : null,
+    endpoint: siteUrl,
+    // connectionString signals to Studio that pg-meta is ready — must be truthy when active
+    connectionString: isActive
+      ? `postgresql://postgres:${p.db_password ?? 'placeholder'}@db.${p.ref}.mysuperdatabase.co:5432/postgres`
+      : null,
+    db_host: `db.${p.ref}.mysuperdatabase.co`,
+    dbVersion: '150001',
+    high_availability: false,
+    integration_source: null,
+    is_branch_enabled: false,
+    is_physical_backups_enabled: false,
   }
 }
 
