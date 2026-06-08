@@ -72,6 +72,25 @@ services:
     plugins:
       - name: cors
 
+  - name: auth-v1-admin
+    _comment: "GoTrue admin API: /auth/v1/admin/* — service_role only"
+    url: http://auth:9999/admin/
+    routes:
+      - name: auth-v1-admin-all
+        strip_path: true
+        paths:
+          - /auth/v1/admin/
+    plugins:
+      - name: cors
+      - name: key-auth
+        config:
+          hide_credentials: false
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow:
+            - admin
+
   - name: auth-v1
     _comment: "GoTrue: /auth/v1/*"
     url: http://auth:9999/

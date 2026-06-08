@@ -50,6 +50,7 @@ services:
 
   # ────────────────────────────────────────────────────────────
   # GoTrue — Auth service
+  # Config is loaded from ./auth.env (generated+updated by provision/update-auth-config scripts)
   # ────────────────────────────────────────────────────────────
   auth:
     <<: *restart
@@ -62,34 +63,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 3
-    environment:
-      GOTRUE_API_HOST: 0.0.0.0
-      GOTRUE_API_PORT: 9999
-      API_EXTERNAL_URL: ${SITE_URL}
-      GOTRUE_DB_DRIVER: postgres
-      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${DB_PASSWORD}@db:5432/postgres
-      GOTRUE_SITE_URL: ${SITE_URL}
-      GOTRUE_URI_ALLOW_LIST: "*"
-      GOTRUE_DISABLE_SIGNUP: "false"
-      GOTRUE_JWT_ADMIN_ROLES: service_role
-      GOTRUE_JWT_AUD: authenticated
-      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
-      GOTRUE_JWT_EXP: 3600
-      GOTRUE_JWT_SECRET: ${JWT_SECRET}
-      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
-      GOTRUE_MAILER_AUTOCONFIRM: "false"
-      GOTRUE_SMTP_ADMIN_EMAIL: ${SMTP_SENDER_NAME}
-      GOTRUE_SMTP_HOST: ${SMTP_HOST:-smtp.mysuperdatabase.com}
-      GOTRUE_SMTP_PORT: ${SMTP_PORT:-587}
-      GOTRUE_SMTP_USER: ${SMTP_USER}
-      GOTRUE_SMTP_PASS: ${SMTP_PASS}
-      GOTRUE_SMTP_SENDER_NAME: ${SMTP_SENDER_NAME:-mysuperdatabase}
-      GOTRUE_MAILER_URLPATHS_INVITE: /auth/v1/verify
-      GOTRUE_MAILER_URLPATHS_CONFIRMATION: /auth/v1/verify
-      GOTRUE_MAILER_URLPATHS_RECOVERY: /auth/v1/verify
-      GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: /auth/v1/verify
-      GOTRUE_EXTERNAL_PHONE_ENABLED: "false"
-      GOTRUE_SMS_AUTOCONFIRM: "false"
+    env_file:
+      - ./auth.env
     networks:
       - msd-${PROJECT_REF}
 

@@ -1,7 +1,13 @@
 import { Hono } from 'hono'
 import { handle } from 'hono/vercel'
+import { exec } from 'child_process'
+import { promisify } from 'util'
+import path from 'path'
 import { auth } from '@/lib/auth'
 import pool from '@/db/client'
+
+const execAsync = promisify(exec)
+const SCRIPTS_DIR = path.resolve(process.cwd(), '../../infra/scripts')
 
 export const runtime = 'nodejs'
 
@@ -272,6 +278,379 @@ app.get('/feature-flags', (c) => {
   return c.json({})
 })
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// AUTH ENDPOINTS — proxied to per-project GoTrue admin API
+// GoTrue admin is exposed via Kong at https://{ref}.mysuperdatabase.co/auth/v1/admin/*
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Helper: get project's service_role_key and endpoint for GoTrue admin proxying
+async function getProjectAuthCreds(ref: string, userId: string) {
+  const { rows } = await pool.query(
+    `SELECT p.service_role_key, p.site_url, p.auth_config, p.status
+     FROM projects p
+     JOIN org_members om ON om.org_id = p.org_id
+     WHERE p.ref=$1 AND om.user_id=$2 AND p.status='active'`,
+    [ref, userId]
+  )
+  return rows[0] ?? null
+}
+
+async function gotrueFetch(
+  siteUrl: string,
+  serviceKey: string,
+  path: string,
+  method = 'GET',
+  body?: unknown
+) {
+  const url = `${siteUrl}/auth/v1/admin/${path}`
+  const res = await fetch(url, {
+    method,
+    headers: {
+      Authorization: `Bearer ${serviceKey}`,
+      apikey: serviceKey,
+      'Content-Type': 'application/json',
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  })
+  const data = await res.json().catch(() => null)
+  return { status: res.status, data }
+}
+
+// ─── GET /platform/auth/{ref}/config ─────────────────────────────────────────
+app.get('/auth/:ref/config', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const creds = await getProjectAuthCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found or project not active' }, 404)
+
+  // Merge stored config with GoTrue live config (GoTrue is source of truth for live values)
+  const stored = creds.auth_config ?? {}
+
+  // Build config shape matching Studio expectations (matches GoTrue admin config response)
+  const config = {
+    SITE_URL: creds.site_url,
+    DISABLE_SIGNUP: stored.DISABLE_SIGNUP ?? false,
+    EXTERNAL_EMAIL_ENABLED: stored.EXTERNAL_EMAIL_ENABLED ?? true,
+    EXTERNAL_PHONE_ENABLED: stored.EXTERNAL_PHONE_ENABLED ?? false,
+    MAILER_AUTOCONFIRM: stored.MAILER_AUTOCONFIRM ?? false,
+    MAILER_SECURE_EMAIL_CHANGE_ENABLED: stored.MAILER_SECURE_EMAIL_CHANGE_ENABLED ?? true,
+    MAILER_OTP_EXP: stored.MAILER_OTP_EXP ?? 86400,
+    JWT_EXP: stored.JWT_EXP ?? 3600,
+    SMTP_ADMIN_EMAIL: stored.SMTP_ADMIN_EMAIL ?? 'noreply@mysuperdatabase.com',
+    SMTP_HOST: stored.SMTP_HOST ?? '',
+    SMTP_PORT: stored.SMTP_PORT ?? 587,
+    SMTP_USER: stored.SMTP_USER ?? '',
+    SMTP_PASS: stored.SMTP_PASS ?? '',
+    SMTP_SENDER_NAME: stored.SMTP_SENDER_NAME ?? 'mysuperdatabase',
+    SMTP_MAX_FREQUENCY: stored.SMTP_MAX_FREQUENCY ?? 1,
+    SMS_AUTOCONFIRM: stored.SMS_AUTOCONFIRM ?? false,
+    SMS_PROVIDER: stored.SMS_PROVIDER ?? 'twilio',
+    SMS_TWILIO_ACCOUNT_SID: stored.SMS_TWILIO_ACCOUNT_SID ?? '',
+    SMS_TWILIO_AUTH_TOKEN: stored.SMS_TWILIO_AUTH_TOKEN ?? '',
+    SMS_TWILIO_MESSAGE_SERVICE_SID: stored.SMS_TWILIO_MESSAGE_SERVICE_SID ?? '',
+    SMS_VONAGE_API_KEY: stored.SMS_VONAGE_API_KEY ?? '',
+    SMS_VONAGE_API_SECRET: stored.SMS_VONAGE_API_SECRET ?? '',
+    SMS_VONAGE_FROM: stored.SMS_VONAGE_FROM ?? '',
+    SMS_OTP_EXP: stored.SMS_OTP_EXP ?? 60,
+    SMS_OTP_LENGTH: stored.SMS_OTP_LENGTH ?? 6,
+    SECURITY_REFRESH_TOKEN_ROTATION_ENABLED: stored.SECURITY_REFRESH_TOKEN_ROTATION_ENABLED ?? true,
+    SECURITY_REFRESH_TOKEN_REUSE_INTERVAL: stored.SECURITY_REFRESH_TOKEN_REUSE_INTERVAL ?? 10,
+    SECURITY_UPDATE_PASSWORD_REQUIRE_REAUTHENTICATION: stored.SECURITY_UPDATE_PASSWORD_REQUIRE_REAUTHENTICATION ?? false,
+    MFA_TOTP_ENROLLMENT_MAX_FREQUENCY: stored.MFA_TOTP_ENROLLMENT_MAX_FREQUENCY ?? 0,
+    MFA_TOTP_ISSUER: stored.MFA_TOTP_ISSUER ?? 'mysuperdatabase',
+    PASSWORD_HIBP_ENABLED: stored.PASSWORD_HIBP_ENABLED ?? false,
+    PASSWORD_MIN_LENGTH: stored.PASSWORD_MIN_LENGTH ?? 6,
+    PASSWORD_REQUIRED_CHARACTERS: stored.PASSWORD_REQUIRED_CHARACTERS ?? '',
+    EXTERNAL_GITHUB_ENABLED: stored.EXTERNAL_GITHUB_ENABLED ?? false,
+    EXTERNAL_GITHUB_CLIENT_ID: stored.EXTERNAL_GITHUB_CLIENT_ID ?? '',
+    EXTERNAL_GITHUB_SECRET: stored.EXTERNAL_GITHUB_SECRET ?? '',
+    EXTERNAL_GOOGLE_ENABLED: stored.EXTERNAL_GOOGLE_ENABLED ?? false,
+    EXTERNAL_GOOGLE_CLIENT_ID: stored.EXTERNAL_GOOGLE_CLIENT_ID ?? '',
+    EXTERNAL_GOOGLE_SECRET: stored.EXTERNAL_GOOGLE_SECRET ?? '',
+    EXTERNAL_DISCORD_ENABLED: stored.EXTERNAL_DISCORD_ENABLED ?? false,
+    EXTERNAL_DISCORD_CLIENT_ID: stored.EXTERNAL_DISCORD_CLIENT_ID ?? '',
+    EXTERNAL_DISCORD_SECRET: stored.EXTERNAL_DISCORD_SECRET ?? '',
+    EXTERNAL_TWITTER_ENABLED: stored.EXTERNAL_TWITTER_ENABLED ?? false,
+    EXTERNAL_TWITTER_CLIENT_ID: stored.EXTERNAL_TWITTER_CLIENT_ID ?? '',
+    EXTERNAL_TWITTER_SECRET: stored.EXTERNAL_TWITTER_SECRET ?? '',
+    EXTERNAL_FACEBOOK_ENABLED: stored.EXTERNAL_FACEBOOK_ENABLED ?? false,
+    EXTERNAL_FACEBOOK_CLIENT_ID: stored.EXTERNAL_FACEBOOK_CLIENT_ID ?? '',
+    EXTERNAL_FACEBOOK_SECRET: stored.EXTERNAL_FACEBOOK_SECRET ?? '',
+    EXTERNAL_APPLE_ENABLED: stored.EXTERNAL_APPLE_ENABLED ?? false,
+    EXTERNAL_APPLE_CLIENT_ID: stored.EXTERNAL_APPLE_CLIENT_ID ?? '',
+    EXTERNAL_APPLE_SECRET: stored.EXTERNAL_APPLE_SECRET ?? '',
+    EXTERNAL_LINKEDIN_OIDC_ENABLED: stored.EXTERNAL_LINKEDIN_OIDC_ENABLED ?? false,
+    EXTERNAL_LINKEDIN_OIDC_CLIENT_ID: stored.EXTERNAL_LINKEDIN_OIDC_CLIENT_ID ?? '',
+    EXTERNAL_LINKEDIN_OIDC_SECRET: stored.EXTERNAL_LINKEDIN_OIDC_SECRET ?? '',
+    EXTERNAL_SLACK_OIDC_ENABLED: stored.EXTERNAL_SLACK_OIDC_ENABLED ?? false,
+    EXTERNAL_SLACK_OIDC_CLIENT_ID: stored.EXTERNAL_SLACK_OIDC_CLIENT_ID ?? '',
+    EXTERNAL_SLACK_OIDC_SECRET: stored.EXTERNAL_SLACK_OIDC_SECRET ?? '',
+    EXTERNAL_TWITCH_ENABLED: stored.EXTERNAL_TWITCH_ENABLED ?? false,
+    EXTERNAL_TWITCH_CLIENT_ID: stored.EXTERNAL_TWITCH_CLIENT_ID ?? '',
+    EXTERNAL_TWITCH_SECRET: stored.EXTERNAL_TWITCH_SECRET ?? '',
+    EXTERNAL_SPOTIFY_ENABLED: stored.EXTERNAL_SPOTIFY_ENABLED ?? false,
+    EXTERNAL_SPOTIFY_CLIENT_ID: stored.EXTERNAL_SPOTIFY_CLIENT_ID ?? '',
+    EXTERNAL_SPOTIFY_SECRET: stored.EXTERNAL_SPOTIFY_SECRET ?? '',
+    EXTERNAL_GITLAB_ENABLED: stored.EXTERNAL_GITLAB_ENABLED ?? false,
+    EXTERNAL_GITLAB_CLIENT_ID: stored.EXTERNAL_GITLAB_CLIENT_ID ?? '',
+    EXTERNAL_GITLAB_SECRET: stored.EXTERNAL_GITLAB_SECRET ?? '',
+    EXTERNAL_GITLAB_URL: stored.EXTERNAL_GITLAB_URL ?? 'https://gitlab.com',
+    EXTERNAL_BITBUCKET_ENABLED: stored.EXTERNAL_BITBUCKET_ENABLED ?? false,
+    EXTERNAL_BITBUCKET_CLIENT_ID: stored.EXTERNAL_BITBUCKET_CLIENT_ID ?? '',
+    EXTERNAL_BITBUCKET_SECRET: stored.EXTERNAL_BITBUCKET_SECRET ?? '',
+  }
+  return c.json(config)
+})
+
+// ─── PATCH /platform/auth/{ref}/config ────────────────────────────────────────
+app.patch('/auth/:ref/config', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const creds = await getProjectAuthCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found or project not active' }, 404)
+
+  const updates = await c.req.json()
+
+  // Merge new values into stored config
+  const current = creds.auth_config ?? {}
+  const merged = { ...current, ...updates }
+
+  // Persist to DB
+  await pool.query(
+    'UPDATE projects SET auth_config=$1, updated_at=NOW() WHERE ref=$2',
+    [JSON.stringify(merged), ref]
+  )
+
+  // Map config keys → GOTRUE env vars for the shell script
+  const env: Record<string, string> = {
+    GOTRUE_SMTP_HOST: merged.SMTP_HOST ?? '',
+    GOTRUE_SMTP_PORT: String(merged.SMTP_PORT ?? 587),
+    GOTRUE_SMTP_USER: merged.SMTP_USER ?? '',
+    GOTRUE_SMTP_PASS: merged.SMTP_PASS ?? '',
+    GOTRUE_SMTP_ADMIN_EMAIL: merged.SMTP_ADMIN_EMAIL ?? 'noreply@mysuperdatabase.com',
+    GOTRUE_SMTP_SENDER_NAME: merged.SMTP_SENDER_NAME ?? 'mysuperdatabase',
+    GOTRUE_SMTP_MAX_FREQUENCY: `${merged.SMTP_MAX_FREQUENCY ?? 1}s`,
+    GOTRUE_DISABLE_SIGNUP: String(merged.DISABLE_SIGNUP ?? false),
+    GOTRUE_MAILER_AUTOCONFIRM: String(merged.MAILER_AUTOCONFIRM ?? false),
+    GOTRUE_EXTERNAL_EMAIL_ENABLED: String(merged.EXTERNAL_EMAIL_ENABLED ?? true),
+    GOTRUE_MAILER_SECURE_EMAIL_CHANGE_ENABLED: String(merged.MAILER_SECURE_EMAIL_CHANGE_ENABLED ?? true),
+    GOTRUE_MAILER_OTP_EXP: String(merged.MAILER_OTP_EXP ?? 86400),
+    GOTRUE_JWT_EXP: String(merged.JWT_EXP ?? 3600),
+    GOTRUE_EXTERNAL_PHONE_ENABLED: String(merged.EXTERNAL_PHONE_ENABLED ?? false),
+    GOTRUE_SMS_AUTOCONFIRM: String(merged.SMS_AUTOCONFIRM ?? false),
+    GOTRUE_SMS_PROVIDER: merged.SMS_PROVIDER ?? 'twilio',
+    GOTRUE_SMS_TWILIO_ACCOUNT_SID: merged.SMS_TWILIO_ACCOUNT_SID ?? '',
+    GOTRUE_SMS_TWILIO_AUTH_TOKEN: merged.SMS_TWILIO_AUTH_TOKEN ?? '',
+    GOTRUE_SMS_TWILIO_MESSAGE_SERVICE_SID: merged.SMS_TWILIO_MESSAGE_SERVICE_SID ?? '',
+    GOTRUE_SMS_VONAGE_API_KEY: merged.SMS_VONAGE_API_KEY ?? '',
+    GOTRUE_SMS_VONAGE_API_SECRET: merged.SMS_VONAGE_API_SECRET ?? '',
+    GOTRUE_SMS_VONAGE_FROM: merged.SMS_VONAGE_FROM ?? '',
+    GOTRUE_SMS_OTP_EXP: String(merged.SMS_OTP_EXP ?? 60),
+    GOTRUE_SMS_OTP_LENGTH: String(merged.SMS_OTP_LENGTH ?? 6),
+    GOTRUE_SECURITY_REFRESH_TOKEN_ROTATION_ENABLED: String(merged.SECURITY_REFRESH_TOKEN_ROTATION_ENABLED ?? true),
+    GOTRUE_SECURITY_REFRESH_TOKEN_REUSE_INTERVAL: String(merged.SECURITY_REFRESH_TOKEN_REUSE_INTERVAL ?? 10),
+    GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_REAUTHENTICATION: String(merged.SECURITY_UPDATE_PASSWORD_REQUIRE_REAUTHENTICATION ?? false),
+    GOTRUE_MFA_TOTP_ENROLLMENT_MAX_FREQUENCY: String(merged.MFA_TOTP_ENROLLMENT_MAX_FREQUENCY ?? 0),
+    GOTRUE_MFA_TOTP_ISSUER: merged.MFA_TOTP_ISSUER ?? 'mysuperdatabase',
+    GOTRUE_PASSWORD_HIBP_ENABLED: String(merged.PASSWORD_HIBP_ENABLED ?? false),
+    GOTRUE_PASSWORD_MIN_LENGTH: String(merged.PASSWORD_MIN_LENGTH ?? 6),
+    GOTRUE_PASSWORD_REQUIRED_CHARACTERS: merged.PASSWORD_REQUIRED_CHARACTERS ?? '',
+    GOTRUE_EXTERNAL_GITHUB_ENABLED: String(merged.EXTERNAL_GITHUB_ENABLED ?? false),
+    GOTRUE_EXTERNAL_GITHUB_CLIENT_ID: merged.EXTERNAL_GITHUB_CLIENT_ID ?? '',
+    GOTRUE_EXTERNAL_GITHUB_SECRET: merged.EXTERNAL_GITHUB_SECRET ?? '',
+    GOTRUE_EXTERNAL_GOOGLE_ENABLED: String(merged.EXTERNAL_GOOGLE_ENABLED ?? false),
+    GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID: merged.EXTERNAL_GOOGLE_CLIENT_ID ?? '',
+    GOTRUE_EXTERNAL_GOOGLE_SECRET: merged.EXTERNAL_GOOGLE_SECRET ?? '',
+    GOTRUE_EXTERNAL_DISCORD_ENABLED: String(merged.EXTERNAL_DISCORD_ENABLED ?? false),
+    GOTRUE_EXTERNAL_DISCORD_CLIENT_ID: merged.EXTERNAL_DISCORD_CLIENT_ID ?? '',
+    GOTRUE_EXTERNAL_DISCORD_SECRET: merged.EXTERNAL_DISCORD_SECRET ?? '',
+    GOTRUE_EXTERNAL_TWITTER_ENABLED: String(merged.EXTERNAL_TWITTER_ENABLED ?? false),
+    GOTRUE_EXTERNAL_TWITTER_CLIENT_ID: merged.EXTERNAL_TWITTER_CLIENT_ID ?? '',
+    GOTRUE_EXTERNAL_TWITTER_SECRET: merged.EXTERNAL_TWITTER_SECRET ?? '',
+    GOTRUE_EXTERNAL_FACEBOOK_ENABLED: String(merged.EXTERNAL_FACEBOOK_ENABLED ?? false),
+    GOTRUE_EXTERNAL_FACEBOOK_CLIENT_ID: merged.EXTERNAL_FACEBOOK_CLIENT_ID ?? '',
+    GOTRUE_EXTERNAL_FACEBOOK_SECRET: merged.EXTERNAL_FACEBOOK_SECRET ?? '',
+    GOTRUE_EXTERNAL_APPLE_ENABLED: String(merged.EXTERNAL_APPLE_ENABLED ?? false),
+    GOTRUE_EXTERNAL_APPLE_CLIENT_ID: merged.EXTERNAL_APPLE_CLIENT_ID ?? '',
+    GOTRUE_EXTERNAL_APPLE_SECRET: merged.EXTERNAL_APPLE_SECRET ?? '',
+    GOTRUE_EXTERNAL_LINKEDIN_OIDC_ENABLED: String(merged.EXTERNAL_LINKEDIN_OIDC_ENABLED ?? false),
+    GOTRUE_EXTERNAL_LINKEDIN_OIDC_CLIENT_ID: merged.EXTERNAL_LINKEDIN_OIDC_CLIENT_ID ?? '',
+    GOTRUE_EXTERNAL_LINKEDIN_OIDC_SECRET: merged.EXTERNAL_LINKEDIN_OIDC_SECRET ?? '',
+    GOTRUE_EXTERNAL_SLACK_OIDC_ENABLED: String(merged.EXTERNAL_SLACK_OIDC_ENABLED ?? false),
+    GOTRUE_EXTERNAL_SLACK_OIDC_CLIENT_ID: merged.EXTERNAL_SLACK_OIDC_CLIENT_ID ?? '',
+    GOTRUE_EXTERNAL_SLACK_OIDC_SECRET: merged.EXTERNAL_SLACK_OIDC_SECRET ?? '',
+    GOTRUE_EXTERNAL_TWITCH_ENABLED: String(merged.EXTERNAL_TWITCH_ENABLED ?? false),
+    GOTRUE_EXTERNAL_TWITCH_CLIENT_ID: merged.EXTERNAL_TWITCH_CLIENT_ID ?? '',
+    GOTRUE_EXTERNAL_TWITCH_SECRET: merged.EXTERNAL_TWITCH_SECRET ?? '',
+    GOTRUE_EXTERNAL_SPOTIFY_ENABLED: String(merged.EXTERNAL_SPOTIFY_ENABLED ?? false),
+    GOTRUE_EXTERNAL_SPOTIFY_CLIENT_ID: merged.EXTERNAL_SPOTIFY_CLIENT_ID ?? '',
+    GOTRUE_EXTERNAL_SPOTIFY_SECRET: merged.EXTERNAL_SPOTIFY_SECRET ?? '',
+    GOTRUE_EXTERNAL_GITLAB_ENABLED: String(merged.EXTERNAL_GITLAB_ENABLED ?? false),
+    GOTRUE_EXTERNAL_GITLAB_CLIENT_ID: merged.EXTERNAL_GITLAB_CLIENT_ID ?? '',
+    GOTRUE_EXTERNAL_GITLAB_SECRET: merged.EXTERNAL_GITLAB_SECRET ?? '',
+    GOTRUE_EXTERNAL_GITLAB_URL: merged.EXTERNAL_GITLAB_URL ?? 'https://gitlab.com',
+    GOTRUE_EXTERNAL_BITBUCKET_ENABLED: String(merged.EXTERNAL_BITBUCKET_ENABLED ?? false),
+    GOTRUE_EXTERNAL_BITBUCKET_CLIENT_ID: merged.EXTERNAL_BITBUCKET_CLIENT_ID ?? '',
+    GOTRUE_EXTERNAL_BITBUCKET_SECRET: merged.EXTERNAL_BITBUCKET_SECRET ?? '',
+  }
+
+  // Run update-auth-config.sh in background (don't block HTTP response)
+  const envPairs = Object.entries(env).map(([k, v]) => `${k}=${v}`).join(' ')
+  const scriptPath = `${SCRIPTS_DIR}/update-auth-config.sh`
+  execAsync(`env ${envPairs} bash "${scriptPath}" "${ref}"`).catch((err) =>
+    console.error(`[auth-config] update failed for ${ref}:`, err.message)
+  )
+
+  return c.json({ ...merged, message: 'Config update queued — GoTrue will reload shortly.' })
+})
+
+// ─── GET /platform/auth/{ref}/users ───────────────────────────────────────────
+app.get('/auth/:ref/users', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const creds = await getProjectAuthCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found or project not active' }, 404)
+
+  const page = parseInt(c.req.query('page') ?? '1')
+  const perPage = parseInt(c.req.query('per_page') ?? '50')
+
+  const { status, data } = await gotrueFetch(
+    creds.site_url,
+    creds.service_role_key,
+    `users?page=${page}&per_page=${perPage}`
+  )
+  return c.json(data, status as any)
+})
+
+// ─── GET /platform/auth/{ref}/users/{id} ──────────────────────────────────────
+app.get('/auth/:ref/users/:id', async (c) => {
+  const userId = c.get('userId')
+  const { ref, id } = c.req.param()
+  const creds = await getProjectAuthCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found or project not active' }, 404)
+
+  const { status, data } = await gotrueFetch(creds.site_url, creds.service_role_key, `users/${id}`)
+  return c.json(data, status as any)
+})
+
+// ─── DELETE /platform/auth/{ref}/users/{id} ────────────────────────────────
+app.delete('/auth/:ref/users/:id', async (c) => {
+  const userId = c.get('userId')
+  const { ref, id } = c.req.param()
+  const creds = await getProjectAuthCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found or project not active' }, 404)
+
+  const { status, data } = await gotrueFetch(
+    creds.site_url, creds.service_role_key, `users/${id}`, 'DELETE'
+  )
+  return c.json(data, status as any)
+})
+
+// ─── PUT /platform/auth/{ref}/users/{id} (update user) ────────────────────
+app.put('/auth/:ref/users/:id', async (c) => {
+  const userId = c.get('userId')
+  const { ref, id } = c.req.param()
+  const creds = await getProjectAuthCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found or project not active' }, 404)
+
+  const body = await c.req.json()
+  const { status, data } = await gotrueFetch(
+    creds.site_url, creds.service_role_key, `users/${id}`, 'PUT', body
+  )
+  return c.json(data, status as any)
+})
+
+// ─── DELETE /platform/auth/{ref}/users/{id}/factors ───────────────────────
+app.delete('/auth/:ref/users/:id/factors', async (c) => {
+  const userId = c.get('userId')
+  const { ref, id } = c.req.param()
+  const creds = await getProjectAuthCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found or project not active' }, 404)
+
+  const { status, data } = await gotrueFetch(
+    creds.site_url, creds.service_role_key, `users/${id}/factors`, 'DELETE'
+  )
+  return c.json(data, status as any)
+})
+
+// ─── POST /platform/auth/{ref}/invite ─────────────────────────────────────────
+app.post('/auth/:ref/invite', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const creds = await getProjectAuthCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found or project not active' }, 404)
+
+  const body = await c.req.json()
+  const { status, data } = await gotrueFetch(
+    creds.site_url, creds.service_role_key, 'invite', 'POST', body
+  )
+  return c.json(data, status as any)
+})
+
+// ─── POST /platform/auth/{ref}/magiclink ──────────────────────────────────────
+app.post('/auth/:ref/magiclink', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const creds = await getProjectAuthCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found or project not active' }, 404)
+
+  const body = await c.req.json()
+  const { status, data } = await gotrueFetch(
+    creds.site_url, creds.service_role_key, 'magiclink', 'POST', body
+  )
+  return c.json(data, status as any)
+})
+
+// ─── POST /platform/auth/{ref}/otp ────────────────────────────────────────────
+app.post('/auth/:ref/otp', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const creds = await getProjectAuthCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found or project not active' }, 404)
+
+  const body = await c.req.json()
+  const { status, data } = await gotrueFetch(
+    creds.site_url, creds.service_role_key, 'otp', 'POST', body
+  )
+  return c.json(data, status as any)
+})
+
+// ─── POST /platform/auth/{ref}/recover ────────────────────────────────────────
+app.post('/auth/:ref/recover', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const creds = await getProjectAuthCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found or project not active' }, 404)
+
+  const body = await c.req.json()
+  const { status, data } = await gotrueFetch(
+    creds.site_url, creds.service_role_key, 'recover', 'POST', body
+  )
+  return c.json(data, status as any)
+})
+
+// ─── POST /platform/auth/{ref}/generate_link ──────────────────────────────────
+app.post('/auth/:ref/generate_link', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const creds = await getProjectAuthCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found or project not active' }, 404)
+
+  const body = await c.req.json()
+  const { status, data } = await gotrueFetch(
+    creds.site_url, creds.service_role_key, 'generate_link', 'POST', body
+  )
+  return c.json(data, status as any)
+})
+
+// ─── DELETE /platform/auth/{ref}/templates/{template}/reset ───────────────────
+app.delete('/auth/:ref/templates/:template/reset', async (c) => {
+  return c.json({ message: 'Template reset to default.' })
+})
+
+// ─── GET /platform/auth/{ref}/validate/spam ───────────────────────────────────
+app.get('/auth/:ref/validate/spam', (c) => c.json({ is_spam: false }))
+
 // ─── Catch-all: 404 for unimplemented endpoints ───────────────────────────────
 app.all('*', (c) => c.json({ message: 'Not implemented' }, 404))
 
@@ -300,6 +679,6 @@ function projectToStudioShape(p: any) {
 
 export const GET = handle(app)
 export const POST = handle(app)
-export const DELETE = handle(app)
-export const PATCH = handle(app)
 export const PUT = handle(app)
+export const PATCH = handle(app)
+export const DELETE = handle(app)
