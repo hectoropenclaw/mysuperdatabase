@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WhatsClear Workflow Rules + Golden Test Matrix v1</title>
+  <style>
+    :root { --ink:#1f2937; --muted:#4b5563; --line:#d1d5db; --panel:#fff; --bg:#f7f7f4; --accent:#0f766e; }
+    body { margin:0; font-family: "Segoe UI", Arial, sans-serif; color:var(--ink); background:var(--bg); line-height:1.4; }
+    .wrap { max-width: 1100px; margin: 20px auto; padding: 0 14px 28px; }
+    .toolbar { display:flex; justify-content:space-between; align-items:center; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+    .btn { background:var(--accent); color:#fff; border:none; padding:8px 12px; border-radius:8px; cursor:pointer; font-weight:600; }
+    .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px; margin-top:12px; }
+    h1 { margin:0 0 8px; font-size:26px; }
+    h2 { margin:16px 0 8px; font-size:20px; }
+    ul,ol { margin: 8px 0 10px 20px; }
+    table { width:100%; border-collapse:collapse; font-size:13px; }
+    th, td { border:1px solid #e5e7eb; padding:6px; text-align:left; vertical-align:top; }
+    th { background:#f9fafb; }
+    .small { color:var(--muted); font-size:13px; }
+    @media print {
+      .toolbar { display:none; }
+      body { background:#fff; }
+      .card { border:none; padding:0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="toolbar">
+      <div><strong>WhatsClear v1 Rules + Golden Matrix</strong> <span class="small">March 5, 2026</span></div>
+      <button class="btn" onclick="window.print()">Print / Save as PDF</button>
+    </div>
+
+    <section class="card">
+      <h1>Workflow Rules Spec v1</h1>
+      <p class="small">Deterministic operational rules for intake, matching, extraction, classification, and admin operation.</p>
+
+      <h2>Core Rules</h2>
+      <ol>
+        <li>Only active channels are synced.</li>
+        <li>Message dedupe is by message_id.</li>
+        <li>Match priority: shipment number, thread/reference, body references, doc refs, then create.</li>
+        <li>If doc-ref match is ambiguous, reuse latest candidate and flag ambiguity.</li>
+        <li>Conservative status mode defaults ON for request/future wording.</li>
+        <li>Derived board status supports <strong>In Transit</strong> for picked-up not-delivered loads.</li>
+        <li>Lane target format is City, ST -&gt; City, ST.</li>
+        <li>Generic customer labels are blocked; customer must be company-like proper noun.</li>
+        <li>Noise emails without shipment intent should be skipped.</li>
+      </ol>
+
+      <h2>Admin Rules</h2>
+      <ul>
+        <li>Keep one active channel per source mailbox/folder.</li>
+        <li>Delete duplicate channels to reduce duplicate pulls.</li>
+        <li>Use query windows intentionally (2d for strict ops, 7d for catch-up).</li>
+        <li>Use vocabulary for phrase mapping only, not core matching logic.</li>
+        <li>If shipment-critical data is ambiguous, populate <strong>Comments</strong> on board.</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h1>Golden Test Matrix (10 Scenarios)</h1>
+      <p class="small">Baseline acceptance dataset for regression checks after each rule/code change.</p>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Scenario</th>
+            <th>Input Summary</th>
+            <th>Expected Action</th>
+            <th>Expected Status</th>
+            <th>Expected Key Fields (incl. Pickup Date / ETA / Comments)</th>
+            <th>Expected Flags</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>GT-001</td><td>New request no attachment</td><td>Please schedule pickup</td><td>Create</td><td>Shipment Requested</td><td>ETA=Pending, comments if ambiguous</td><td>Shipment # missing/manual</td></tr>
+          <tr><td>GT-002</td><td>New request with release PDF</td><td>TNSO release instructions</td><td>Create</td><td>Shipment Requested</td><td>Customer+Lane+Invoice+PO extracted</td><td>Shipment # missing/manual</td></tr>
+          <tr><td>GT-003</td><td>Follow-up picked up</td><td>has been picked up, carrier is X</td><td>Update existing</td><td>In Transit</td><td>US Carrier updated, ETA pending</td><td>None or forward-step flag</td></tr>
+          <tr><td>GT-004</td><td>Follow-up with ETA</td><td>picked up, ETA date provided</td><td>Update existing</td><td>In Transit</td><td>ETA future date, Pickup Date date-only</td><td>ETA date validation</td></tr>
+          <tr><td>GT-005</td><td>Follow-up delivered</td><td>load delivered today</td><td>Update existing</td><td>Delivered</td><td>No duplicate row</td><td>None or forward-step flag</td></tr>
+          <tr><td>GT-006</td><td>Noise email</td><td>security/notification text</td><td>Skip</td><td>No change</td><td>No shipment created</td><td>None</td></tr>
+          <tr><td>GT-007</td><td>Ambiguous doc refs</td><td>PO matches multiple rows</td><td>Reuse latest candidate</td><td>Derived</td><td>No extra new row, comments note</td><td>Ambiguous match flag</td></tr>
+          <tr><td>GT-008</td><td>Country-only lane phrase</td><td>MX to US text</td><td>Create/Update</td><td>Derived</td><td>Lane not auto-set from country-only text</td><td>As applicable</td></tr>
+          <tr><td>GT-009</td><td>Generic customer labels in PDF</td><td>Picking Address present</td><td>Create/Update</td><td>Derived</td><td>Customer must be company proper noun</td><td>As applicable</td></tr>
+          <tr><td>GT-010</td><td>Duplicate message fetch</td><td>Same message id twice</td><td>Dedupe</td><td>No change</td><td>No duplicate mutation</td><td>None</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </div>
+</body>
+</html>

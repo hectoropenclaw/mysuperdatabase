@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "whatsclear"
+version = "0.1.0"
+description = "WhatsClear MVP: email + digital PDF ingestion into structured shipment tracking."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "pypdf>=4.2.0",
+  "fastapi>=0.116.0",
+  "uvicorn>=0.35.0",
+]
+
+[project.optional-dependencies]
+google = [
+  "google-api-python-client>=2.155.0",
+  "google-auth>=2.37.0",
+  "google-auth-oauthlib>=1.2.1",
+]
+postgres = [
+  "psycopg[binary]>=3.2.0",
+]
+dev = [
+  "pytest>=8.3.0",
+  "httpx>=0.28.0",
+]
+
+[project.scripts]
+whatsclear = "whatsclear.cli:main"
+whatsclear-web = "whatsclear.web_cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"whatsclear" = ["web_ui/*.html"]

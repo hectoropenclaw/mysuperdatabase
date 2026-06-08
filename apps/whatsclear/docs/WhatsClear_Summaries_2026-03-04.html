@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WhatsClear Summaries - 2026-03-04</title>
+  <style>
+    :root {
+      --bg: #f7f7f4;
+      --panel: #ffffff;
+      --ink: #1f2937;
+      --muted: #4b5563;
+      --line: #d1d5db;
+      --accent: #0f766e;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Arial, sans-serif;
+      color: var(--ink);
+      background: linear-gradient(180deg, #fefce8 0%, var(--bg) 22%);
+      line-height: 1.45;
+    }
+    .wrap {
+      max-width: 980px;
+      margin: 24px auto;
+      padding: 0 16px 32px;
+    }
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin-bottom: 12px;
+    }
+    .meta {
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .print-btn {
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 18px;
+      margin-bottom: 12px;
+    }
+    h1 {
+      margin: 0 0 10px;
+      font-size: 26px;
+    }
+    h2 {
+      margin: 18px 0 8px;
+      font-size: 20px;
+      border-left: 4px solid #99f6e4;
+      padding-left: 8px;
+    }
+    h3 {
+      margin: 14px 0 6px;
+      font-size: 16px;
+    }
+    p, li { font-size: 15px; }
+    ul, ol { margin: 8px 0 10px 20px; }
+    .small { font-size: 13px; color: var(--muted); }
+
+    @media print {
+      body { background: #fff; }
+      .toolbar { display: none; }
+      .section {
+        border: none;
+        padding: 0;
+        margin-bottom: 18px;
+      }
+      h2 { border-left: none; padding-left: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="toolbar">
+      <div class="meta"><strong>WhatsClear Summaries</strong> | Generated March 4, 2026</div>
+      <button class="print-btn" onclick="window.print()">Print / Save as PDF</button>
+    </div>
+
+    <section class="section">
+      <h1>1) Non-Technical Workflow Summary</h1>
+      <p><strong>What WhatsClear does today:</strong> WhatsClear ingests shipment emails and digital PDFs, updates shipment records, flags uncertain cases for manual review, and keeps the master tracking sheet updated.</p>
+
+      <h2>Business Flow</h2>
+      <ol>
+        <li>Inbound shipment emails arrive in configured channels.</li>
+        <li>WhatsClear ingests message content and PDF attachments.</li>
+        <li>It matches to an existing shipment (shipment #, thread/reference, or doc references) or creates a new record.</li>
+        <li>It classifies status and applies lifecycle/handoff checks.</li>
+        <li>If uncertain or conflicting, it marks manual verification required.</li>
+        <li>Operations resolves flagged records in the web UI.</li>
+        <li>Updated shipment data is synced to the master sheet output.</li>
+      </ol>
+
+      <h2>Automation vs Human Work</h2>
+      <h3>Automated</h3>
+      <ul>
+        <li>Duplicate message prevention</li>
+        <li>Best-effort shipment matching</li>
+        <li>Status classification from known phrases</li>
+        <li>Digital PDF extraction</li>
+        <li>Audit/KPI logging</li>
+      </ul>
+      <h3>Human Required</h3>
+      <ul>
+        <li>Enter shipment number when missing</li>
+        <li>Resolve manual verification flags</li>
+        <li>Correct conflicts/edge cases</li>
+        <li>Manual overrides with reason</li>
+      </ul>
+
+      <h2>Current Limits</h2>
+      <ul>
+        <li>No auto-generated shipment numbers.</li>
+        <li>No OCR for scanned/image PDFs.</li>
+        <li>Verification queue is simplified to manual-flagged shipments.</li>
+        <li>Microsoft 365 ingestion is not implemented in the service logic.</li>
+        <li>Realtime is currently polling-based behavior.</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h1>2) Admin SOP (Current Build)</h1>
+
+      <h2>Initial Setup</h2>
+      <ol>
+        <li>Start the WhatsClear web server.</li>
+        <li>Login as admin.</li>
+        <li>Create intake channel(s): provider, credentials/query, folder, polling interval, active=true.</li>
+        <li>Run test/sync and confirm successful sync timestamp.</li>
+      </ol>
+
+      <h2>Daily Checklist</h2>
+      <ol>
+        <li>Check channel health (active, last sync, last error).</li>
+        <li>Trigger manual sync when needed.</li>
+        <li>Review verification backlog with operations.</li>
+        <li>Review KPIs and audit activity for anomalies.</li>
+      </ol>
+
+      <h2>Runbook</h2>
+      <h3>Sync Error</h3>
+      <ol>
+        <li>Inspect channel <code>last_error</code>.</li>
+        <li>Validate credentials/host/folder.</li>
+        <li>Re-run sync and confirm <code>last_successful_sync</code> updates.</li>
+      </ol>
+
+      <h3>High Verification Backlog</h3>
+      <ol>
+        <li>Prioritize high-impact shipments.</li>
+        <li>Add vocabulary for recurring unmatched wording.</li>
+        <li>Coordinate with ops on missing data/document patterns.</li>
+      </ol>
+
+      <h2>Governance Caveats</h2>
+      <ul>
+        <li>Current users/auth model is MVP-level.</li>
+        <li>Credential handling is not production-hardened secret management yet.</li>
+        <li>Retry/ignore intake errors adjust status records but do not fully replay original failed payloads.</li>
+      </ul>
+
+      <p class="small">Version note: this reflects actual implemented behavior as of March 4, 2026.</p>
+    </section>
+  </div>
+</body>
+</html>

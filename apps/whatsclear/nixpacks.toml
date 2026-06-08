@@ -1,0 +1,17 @@
+[variables]
+PYTHONPATH = "/app/src"
+
+[phases.setup]
+nixPkgs = ["python3", "postgresql_16.dev", "gcc"]
+aptPkgs = ["curl", "wget"]
+
+[phases.install]
+cmds = [
+  "python -m venv --copies /opt/venv && . /opt/venv/bin/activate && pip install --upgrade pip setuptools wheel && pip install -r requirements.txt",
+]
+onlyIncludeFiles = ["requirements.txt"]
+cacheDirectories = ["/root/.cache/pip"]
+paths = ["/opt/venv/bin"]
+
+[start]
+cmd = "PYTHONPATH=/app/src python -m whatsclear.web_cli --host 0.0.0.0 --port 8000"

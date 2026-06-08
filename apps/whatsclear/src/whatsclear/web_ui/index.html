@@ -1,0 +1,1018 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WhatsClear Ops Console</title>
+  <style>
+    :root {
+      --bg: #eef5ff;
+      --ink: #123055;
+      --panel: #ffffff;
+      --accent: #1565c0;
+      --accent-dark: #0d47a1;
+      --row-a: #e8f1ff;
+      --row-b: #ffffff;
+      --warning: #d9e9ff;
+      --line: #c8d8ef;
+      --muted: #5b7394;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Trebuchet MS", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 10% 10%, #d9ebff 0%, transparent 26%),
+        radial-gradient(circle at 92% 85%, #f7fbff 0%, transparent 22%),
+        var(--bg);
+      min-height: 100vh;
+    }
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 24px; }
+    .hero {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 14px;
+      margin-bottom: 16px;
+    }
+    .title { font-size: 1.6rem; font-weight: 800; letter-spacing: 0.4px; }
+    .sub { color: var(--muted); font-size: 0.9rem; margin-top: 4px; }
+    .badge { padding: 8px 10px; border: 1px solid var(--line); border-radius: 999px; background: #f0f8f5; font-size: 0.85rem; }
+    .user-actions { display: flex; align-items: center; gap: 8px; }
+    .logout-btn { display: none; }
+    .table-wrap { overflow-x: auto; }
+    .grid { display: grid; gap: 14px; }
+    .cards { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--panel);
+      padding: 12px;
+      animation: in 280ms ease;
+    }
+    .card .k { color: var(--muted); font-size: 0.8rem; text-transform: uppercase; }
+    .card .v { font-size: 1.4rem; font-weight: 700; margin-top: 4px; }
+    .panel {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 14px;
+      padding: 14px;
+      margin-top: 12px;
+      animation: in 320ms ease;
+    }
+    .controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+    .controls label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    input, select, button, textarea {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font: inherit;
+      background: #fff;
+    }
+    button {
+      cursor: pointer;
+      background: var(--accent);
+      color: #fff;
+      border-color: transparent;
+    }
+    button.secondary { background: #fff; color: var(--ink); border-color: var(--line); }
+    button:hover { background: var(--accent-dark); }
+    button.secondary:hover { background: #edf5ff; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+    th, td { text-align: left; border-bottom: 1px solid #ece6db; padding: 8px 6px; }
+    th { color: var(--muted); font-weight: 700; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.4px; }
+    tbody tr:nth-child(odd) td { background: var(--row-a); }
+    tbody tr:nth-child(even) td { background: var(--row-b); }
+    tr.warn td { background: var(--warning) !important; }
+    .hidden { display: none; }
+    .customer-hidden { display: table-cell; }
+    .tabs { display: flex; gap: 6px; margin-top: 10px; }
+    .tab { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+    .tab.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+    .status { color: var(--muted); margin-top: 8px; min-height: 20px; }
+    .result-panel {
+      margin-top: 10px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fcfaf4;
+      padding: 12px;
+    }
+    .result-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .result-k {
+      color: var(--muted);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-bottom: 4px;
+    }
+    .result-v {
+      font-weight: 600;
+      word-break: break-word;
+    }
+    .result-block {
+      margin-top: 8px;
+    }
+    .result-json {
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #fff;
+      border: 1px solid #ece6db;
+      border-radius: 8px;
+      padding: 10px;
+      margin: 0;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.85rem;
+    }
+    .modal {
+      position: fixed; inset: 0; background: rgba(20,20,20,.25); display: none; align-items: center; justify-content: center;
+    }
+    .modal.open { display: flex; }
+    .modal-card {
+      width: min(520px, 94vw);
+      background: #fff; border-radius: 12px; border: 1px solid var(--line); padding: 14px;
+    }
+    @keyframes in {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <div>
+        <div class="title">WhatsClear Operations Console</div>
+        <div class="sub">PRD MVP UI bootstrap for operations and admin trial</div>
+      </div>
+      <div class="user-actions">
+        <div id="userBadge" class="badge">Not signed in</div>
+        <button id="logoutBtn" class="secondary logout-btn">Logout</button>
+      </div>
+    </div>
+
+      <div id="loginPanel" class="panel">
+        <div class="controls">
+        <input id="email" placeholder="email" value="ops@whatsclear.local" />
+        <input id="password" type="password" placeholder="password" value="ops123" />
+        <button id="loginBtn">Login</button>
+      </div>
+      <div class="sub">Demo users: ops@whatsclear.local / ops123, admin@whatsclear.local / admin123, customer@whatsclear.local / customer123</div>
+      <div id="loginStatus" class="status"></div>
+    </div>
+
+    <div id="appPanel" class="hidden">
+      <div class="grid cards" id="kpiCards"></div>
+
+      <div class="tabs">
+        <button class="tab active" data-tab="shipments">Shipments</button>
+        <button class="tab" data-tab="verification">Verification Queue</button>
+        <button id="adminTabBtn" class="tab hidden" data-tab="admin">Admin</button>
+      </div>
+
+      <div id="shipmentsTab" class="panel">
+        <div class="controls">
+          <input id="searchInput" placeholder="Search Shipment # / invoice / BOL / PO / shipper / consignee" />
+          <select id="statusFilter">
+            <option value="">Status Any</option>
+          </select>
+          <input id="laneFilter" placeholder="Lane" />
+          <input id="ownerFilter" placeholder="Owner" />
+          <select id="blockedFilter">
+            <option value="">Blocked Any</option>
+            <option value="true">Blocked TRUE</option>
+            <option value="false">Blocked FALSE</option>
+          </select>
+          <select id="manualFilter">
+            <option value="">Manual Any</option>
+            <option value="true">Manual TRUE</option>
+            <option value="false">Manual FALSE</option>
+          </select>
+          <label><input id="includeClosed" type="checkbox" /> Show closed</label>
+          <button id="searchBtn">Refresh</button>
+          <button id="exportBtn" class="secondary">Download CSV</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Shipment #</th>
+                <th>Customer</th>
+                <th>Lane</th>
+                <th>Invoice #</th>
+                <th>BOL #</th>
+                <th>PO #</th>
+                <th>Pickup Date</th>
+                <th>ETA</th>
+                <th>MX Carrier</th>
+                <th>US Carrier</th>
+                <th>Status</th>
+                <th>Comments</th>
+                <th>Blocked Reason</th>
+                <th>Owner</th>
+                <th>Last Update (PST)</th>
+                <th data-customer-hidden="true">Manual Verification</th>
+                <th>Shipment Created (PST)</th>
+                <th>Open</th>
+              </tr>
+            </thead>
+            <tbody id="shipmentsBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="verificationTab" class="panel hidden">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Shipment #</th>
+                <th>Flag Type</th>
+                <th>Field</th>
+                <th>Current Value</th>
+                <th>Suggested Value</th>
+                <th>Detected At</th>
+                <th>Owner</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="verificationBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="adminTab" class="panel hidden">
+        <div id="adminBlock" class="sub">Admin-only panel. Login as admin to use it.</div>
+        <div id="adminControls" class="hidden">
+          <div class="controls">
+            <input id="vocabPhrase" placeholder="phrase" />
+            <select id="vocabStatus"></select>
+            <button id="addVocabBtn">Add vocabulary</button>
+          </div>
+          <div class="panel" style="margin-top: 0;">
+            <div class="sub">Semantic extraction and strict schema validation</div>
+            <div class="controls">
+              <label><input id="semanticEnabled" type="checkbox" /> Semantic extraction enabled</label>
+              <input id="semanticProvider" placeholder="provider" value="openai" />
+              <input id="semanticModel" placeholder="model" value="gpt-4.1-mini" />
+              <input id="semanticEndpoint" placeholder="endpoint (optional)" />
+            </div>
+            <div class="controls">
+              <input id="semanticTimeout" type="number" min="1" placeholder="timeout seconds" value="20" />
+              <input id="semanticRetries" type="number" min="0" placeholder="max retries" value="2" />
+              <label><input id="schemaEnabled" type="checkbox" checked /> Schema validation enabled</label>
+              <input id="schemaName" placeholder="schema name" value="shipment_event_v1" />
+            </div>
+            <div class="controls">
+              <input id="autoApplyThreshold" type="number" min="0" max="1" step="0.01" placeholder="auto apply threshold" value="0.90" />
+              <input id="reviewThreshold" type="number" min="0" max="1" step="0.01" placeholder="review threshold" value="0.65" />
+              <label><input id="requireEvidence" type="checkbox" checked /> Require source evidence</label>
+              <label><input id="allowForwardJumps" type="checkbox" checked /> Allow forward status jumps</label>
+              <label><input id="conservativeStatusMode" type="checkbox" checked /> Conservative status mode</label>
+            </div>
+            <div class="controls">
+              <label><input id="preferPdf" type="checkbox" checked /> Prefer PDF over email body</label>
+              <label><input id="freeformAutoApply" type="checkbox" /> Allow freeform email auto apply</label>
+              <input id="trustedDomains" placeholder="trusted domains comma-separated" />
+            </div>
+            <div class="controls">
+              <button id="loadSettingsBtn" class="secondary">Load extraction settings</button>
+              <button id="saveSettingsBtn">Save extraction settings</button>
+              <button id="testSemanticBtn" class="secondary">Test semantic extraction</button>
+            </div>
+            <div class="controls">
+              <input id="semanticTestSubject" placeholder="test subject" value="Re: next load update" />
+              <textarea id="semanticTestBody" rows="3" placeholder="test email body">Load has been picked up now, carrier is JB Hunt.</textarea>
+            </div>
+            <div id="semanticResultPanel" class="result-panel hidden">
+              <div class="result-grid">
+                <div>
+                  <div class="result-k">Provider</div>
+                  <div id="semanticResultProvider" class="result-v"></div>
+                </div>
+                <div>
+                  <div class="result-k">Model</div>
+                  <div id="semanticResultModel" class="result-v"></div>
+                </div>
+                <div>
+                  <div class="result-k">Confidence</div>
+                  <div id="semanticResultConfidence" class="result-v"></div>
+                </div>
+                <div>
+                  <div class="result-k">Status</div>
+                  <div id="semanticResultStatus" class="result-v"></div>
+                </div>
+              </div>
+              <div class="result-block">
+                <div class="result-k">Extracted Fields</div>
+                <pre id="semanticResultFields" class="result-json"></pre>
+              </div>
+              <div class="result-block">
+                <div class="result-k">Source Evidence</div>
+                <pre id="semanticResultEvidence" class="result-json"></pre>
+              </div>
+              <div class="result-block">
+                <div class="result-k">Review Notes</div>
+                <pre id="semanticResultNotes" class="result-json"></pre>
+              </div>
+            </div>
+          </div>
+          <div class="controls">
+            <input id="channelName" placeholder="channel name" />
+            <select id="providerType">
+              <option value="imap">IMAP</option>
+              <option value="gmail">Gmail</option>
+              <option value="microsoft365">Microsoft 365</option>
+            </select>
+            <input id="channelHost" placeholder="host (imap.gmail.com)" value="imap.gmail.com" />
+            <input id="channelFolder" placeholder="folder" value="INBOX" />
+            <input id="channelUsername" placeholder="username / mailbox" />
+            <input id="channelPassword" type="password" placeholder="app password / token" />
+            <input id="gmailQuery" placeholder="gmail query" value="newer_than:2d" />
+            <label><input id="channelActive" type="checkbox" checked /> Active</label>
+            <button id="addChannelBtn">Save intake channel</button>
+            <button id="syncIntakeBtn" class="secondary">Sync active channels now</button>
+            <button id="clearDataBtn" class="secondary">Clear test data</button>
+          </div>
+          <div class="sub">For Gmail via IMAP, use mailbox `whatsclear.ops@gmail.com` and a Gmail app password.</div>
+          <div class="status" id="adminStatus"></div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Channel</th>
+                  <th>Provider</th>
+                  <th>Folder</th>
+                  <th>Active</th>
+                  <th>Last Sync</th>
+                  <th>Last Error</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="channelsBody"></tbody>
+            </table>
+          </div>
+          <div class="sub" style="margin-top: 12px;">Extraction audit queue</div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>When</th>
+                  <th>Decision</th>
+                  <th>Provider</th>
+                  <th>Model</th>
+                  <th>Confidence</th>
+                  <th>Shipment</th>
+                  <th>Errors</th>
+                </tr>
+              </thead>
+              <tbody id="extractionAuditsBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+      <div id="detailModal" class="modal">
+    <div class="modal-card">
+      <h3 id="detailTitle">Shipment Detail / Edit</h3>
+      <div class="controls">
+        <input id="editCustomer" placeholder="customer" />
+        <input id="editStatus" placeholder="status" />
+        <input id="editOwner" placeholder="owner" />
+      </div>
+      <div class="controls">
+        <input id="editMxCarrier" placeholder="mx carrier" />
+        <input id="editUsCarrier" placeholder="us carrier" />
+      </div>
+      <div class="controls">
+        <input id="editPickupDate" placeholder="pickup date (YYYY-MM-DD)" />
+        <input id="editEta" placeholder="eta (YYYY-MM-DD or Pending)" />
+      </div>
+      <textarea id="editComments" placeholder="comments" rows="3" style="width: 100%;"></textarea>
+      <div class="controls">
+        <button id="saveEditBtn">Save</button>
+        <button id="openOverrideBtn" class="secondary">Manual Override</button>
+        <button id="closeModalBtn" class="secondary">Close</button>
+      </div>
+      <div class="status" id="detailStatus"></div>
+    </div>
+  </div>
+
+  <script>
+    const state = { token: "", role: "", email: "", selectedShipment: null };
+    const canonicalStatuses = [
+      "Shipment Requested","Pickup Scheduled","Pickup Completed","Docs Missing","Docs Sent",
+      "Export Cleared","Import Cleared","Filed","Released","Crossed","Dispatch Pending","Dispatched","Delivered"
+    ];
+    const statusSelect = document.getElementById("vocabStatus");
+    const shipmentsStatusFilter = document.getElementById("statusFilter");
+    canonicalStatuses.forEach(s => {
+      const o = document.createElement("option");
+      o.value = s;
+      o.textContent = s;
+      statusSelect.appendChild(o);
+
+      const filterOption = document.createElement("option");
+      filterOption.value = s;
+      filterOption.textContent = s;
+      shipmentsStatusFilter.appendChild(filterOption);
+    });
+    const inTransitOption = document.createElement("option");
+    inTransitOption.value = "In Transit";
+    inTransitOption.textContent = "In Transit";
+    shipmentsStatusFilter.appendChild(inTransitOption);
+
+    function setStatus(msg, id = "loginStatus") { document.getElementById(id).textContent = msg || ""; }
+    function authHeaders() { return { "Authorization": `Bearer ${state.token}`, "Content-Type": "application/json" }; }
+    function isCustomerView() { return state.role === "customer"; }
+    function applyRoleVisibility() {
+      const hideForCustomer = isCustomerView();
+      document.querySelectorAll("[data-customer-hidden='true']").forEach(el => {
+        el.style.display = hideForCustomer ? "none" : "";
+      });
+      document.getElementById("manualFilter").style.display = hideForCustomer ? "none" : "";
+      document.getElementById("ownerFilter").style.display = hideForCustomer ? "none" : "";
+      document.getElementById("blockedFilter").style.display = hideForCustomer ? "none" : "";
+      document.getElementById("includeClosed").parentElement.style.display = hideForCustomer ? "none" : "";
+      document.querySelector("[data-tab='verification']").style.display = hideForCustomer ? "none" : "";
+      document.getElementById("detailTitle").textContent = hideForCustomer ? "Shipment Detail" : "Shipment Detail / Edit";
+      document.getElementById("saveEditBtn").style.display = hideForCustomer ? "none" : "";
+      document.getElementById("openOverrideBtn").style.display = hideForCustomer ? "none" : "";
+    }
+    async function api(path, opts = {}) {
+      const requestOpts = { cache: "no-store", ...opts };
+      const res = await fetch(path, requestOpts);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.detail || `${res.status} ${res.statusText}`);
+      }
+      const ct = res.headers.get("content-type") || "";
+      return ct.includes("application/json") ? res.json() : res.text();
+    }
+
+    async function login() {
+      try {
+        const email = document.getElementById("email").value.trim();
+        const password = document.getElementById("password").value;
+        const data = await api("/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+        state.token = data.access_token;
+        state.role = data.role;
+        state.email = data.email;
+        document.getElementById("userBadge").textContent = `${state.email} (${state.role})`;
+        document.getElementById("logoutBtn").style.display = "inline-block";
+        document.getElementById("loginPanel").classList.add("hidden");
+        document.getElementById("appPanel").classList.remove("hidden");
+        setStatus("Logged in");
+        if (state.role === "admin") {
+          document.getElementById("adminTabBtn").classList.remove("hidden");
+        } else {
+          document.getElementById("adminTabBtn").classList.add("hidden");
+          activateTab("shipments");
+        }
+        if (state.role === "admin") {
+          document.getElementById("adminBlock").classList.add("hidden");
+          document.getElementById("adminControls").classList.remove("hidden");
+        } else {
+          document.getElementById("adminBlock").classList.remove("hidden");
+          document.getElementById("adminControls").classList.add("hidden");
+        }
+        applyRoleVisibility();
+        const tasks = [loadMetrics(), loadShipments(), loadVerification()];
+        if (state.role === "admin") tasks.push(loadChannels(), loadExtractionSettings(), loadExtractionAudits());
+        await Promise.all(tasks);
+      } catch (err) {
+        setStatus(`Login failed: ${err.message}`);
+      }
+    }
+
+    async function logout() {
+      if (!state.token) return;
+      try {
+        await api("/auth/logout", { method: "POST", headers: authHeaders() });
+      } catch (err) {
+        setStatus(`Logout warning: ${err.message}`);
+      }
+      state.token = "";
+      state.role = "";
+      state.email = "";
+      state.selectedShipment = null;
+      document.getElementById("userBadge").textContent = "Not signed in";
+      document.getElementById("logoutBtn").style.display = "none";
+      document.getElementById("shipmentsBody").innerHTML = "";
+      document.getElementById("verificationBody").innerHTML = "";
+      document.getElementById("channelsBody").innerHTML = "";
+      document.getElementById("extractionAuditsBody").innerHTML = "";
+      document.getElementById("kpiCards").innerHTML = "";
+      document.getElementById("loginPanel").classList.remove("hidden");
+      document.getElementById("appPanel").classList.add("hidden");
+      document.getElementById("adminBlock").classList.remove("hidden");
+      document.getElementById("adminControls").classList.add("hidden");
+      document.getElementById("adminTabBtn").classList.add("hidden");
+      applyRoleVisibility();
+      activateTab("shipments");
+      setStatus("Logged out");
+    }
+
+    async function loadMetrics() {
+      const m = await api("/metrics", { headers: authHeaders() });
+      const cards = [
+        ["Active", m.active_shipments ?? 0],
+        ["Blocked", m.blocked_shipments ?? 0],
+        ["Manual", m.manual_verification_required ?? 0],
+        ["Delivered Today", m.delivered_today ?? 0],
+        ["Avg Transit (days)", m.average_transit_days ?? 0],
+      ];
+      const root = document.getElementById("kpiCards");
+      root.innerHTML = "";
+      cards.forEach(([k, v]) => {
+        const card = document.createElement("div");
+        card.className = "card";
+        card.innerHTML = `<div class="k">${k}</div><div class="v">${v}</div>`;
+        root.appendChild(card);
+      });
+    }
+
+    async function loadShipments() {
+      const q = document.getElementById("searchInput").value.trim();
+      const status = document.getElementById("statusFilter").value.trim();
+      const lane = document.getElementById("laneFilter").value.trim();
+      const owner = document.getElementById("ownerFilter").value.trim();
+      const blocked = document.getElementById("blockedFilter").value;
+      const manual = document.getElementById("manualFilter").value;
+      const includeClosed = document.getElementById("includeClosed").checked;
+      const params = new URLSearchParams({ page_size: "100" });
+      if (q) params.set("q", q);
+      if (lane) params.set("lane", lane);
+      if (owner) params.set("owner", owner);
+      if (blocked) params.set("blocked", blocked);
+      if (manual && !isCustomerView()) params.set("manual_verification", manual);
+      if (includeClosed && !isCustomerView()) params.set("include_closed", "true");
+      if (status && status !== "In Transit") params.set("status", status);
+      const data = await api(`/shipments?${params.toString()}`, { headers: authHeaders() });
+      const body = document.getElementById("shipmentsBody");
+      body.innerHTML = "";
+      let items = data.items;
+      if (status === "In Transit") {
+        items = items.filter(s => (s.derived_status || s.status) === "In Transit");
+      }
+      items.forEach(s => {
+        const tr = document.createElement("tr");
+        if (s.manual_verification_required && !isCustomerView()) tr.classList.add("warn");
+        if ((s.lifecycle_state || "active") === "closed") tr.style.opacity = "0.75";
+        tr.innerHTML = `
+          <td>${s.shipment_number || ""}</td>
+          <td>${s.customer || ""}</td>
+          <td>${s.lane || ""}</td>
+          <td>${s.invoice_number || ""}</td>
+          <td>${s.bol_number || ""}</td>
+          <td>${s.po_number || ""}</td>
+          <td>${s.pickup_date || ""}</td>
+          <td>${s.eta || ""}</td>
+          <td>${s.mx_carrier || ""}</td>
+          <td>${s.us_carrier || ""}</td>
+          <td>${s.derived_status || s.status || ""}</td>
+          <td>${s.comments || ""}</td>
+          <td>${s.blocked_reason || ""}</td>
+          <td>${s.owner || ""}</td>
+          <td>${s.last_update_pst || s.last_update || ""}</td>
+          <td data-customer-hidden="true">${s.manual_verification_required ? "TRUE" : ""}</td>
+          <td>${s.created_date_pst || ""}</td>
+          <td><button class="secondary" data-open="${s.id}">Open</button></td>
+        `;
+        body.appendChild(tr);
+      });
+      body.querySelectorAll("button[data-open]").forEach(btn => {
+        btn.addEventListener("click", () => openDetail(Number(btn.dataset.open)));
+      });
+      applyRoleVisibility();
+    }
+
+    async function loadVerification() {
+      if (isCustomerView()) {
+        document.getElementById("verificationBody").innerHTML = "";
+        return;
+      }
+      const data = await api("/verification-items", { headers: authHeaders() });
+      const body = document.getElementById("verificationBody");
+      body.innerHTML = "";
+      data.items.forEach(item => {
+        const tr = document.createElement("tr");
+        tr.className = "warn";
+        tr.innerHTML = `
+          <td>${item.shipment_number || ""}</td>
+          <td>${item.flag_type || ""}</td>
+          <td>${item.field || ""}</td>
+          <td>${item.current_value || ""}</td>
+          <td>${item.suggested_value || ""}</td>
+          <td>${item.detected_at || ""}</td>
+          <td>${item.owner || ""}</td>
+          <td><button data-resolve="${item.id}">Resolve</button></td>
+        `;
+        body.appendChild(tr);
+      });
+      body.querySelectorAll("button[data-resolve]").forEach(btn => {
+        btn.addEventListener("click", () => resolveVerification(btn.dataset.resolve));
+      });
+    }
+
+    async function loadChannels() {
+      if (state.role !== "admin") return;
+      const data = await api("/intake/channels", { headers: authHeaders() });
+      const body = document.getElementById("channelsBody");
+      body.innerHTML = "";
+      data.items.forEach(channel => {
+        const tr = document.createElement("tr");
+        if (channel.last_error) tr.classList.add("warn");
+        tr.innerHTML = `
+          <td>${channel.channel_name || ""}</td>
+          <td>${channel.provider_type || ""}</td>
+          <td>${channel.folder_label || ""}</td>
+          <td>${channel.active ? "TRUE" : "FALSE"}</td>
+          <td>${channel.last_successful_sync || ""}</td>
+          <td>${channel.last_error || ""}</td>
+          <td>
+            <button class="secondary" data-toggle-channel="${channel.id}" data-next="${channel.active ? "deactivate" : "activate"}">${channel.active ? "Deactivate" : "Activate"}</button>
+            <button class="secondary" data-delete-channel="${channel.id}">Delete</button>
+          </td>
+        `;
+        body.appendChild(tr);
+      });
+      body.querySelectorAll("button[data-toggle-channel]").forEach(btn => {
+        btn.addEventListener("click", async () => {
+          const id = btn.dataset.toggleChannel;
+          const action = btn.dataset.next;
+          try {
+            await api(`/intake/channels/${id}/${action}`, { method: "POST", headers: authHeaders() });
+            setStatus(`Channel ${action}d`, "adminStatus");
+            await loadChannels();
+          } catch (err) {
+            setStatus(`Channel ${action} error: ${err.message}`, "adminStatus");
+          }
+        });
+      });
+      body.querySelectorAll("button[data-delete-channel]").forEach(btn => {
+        btn.addEventListener("click", async () => {
+          const id = btn.dataset.deleteChannel;
+          if (!confirm("Delete this intake channel?")) return;
+          try {
+            await api(`/intake/channels/${id}`, { method: "DELETE", headers: authHeaders() });
+            setStatus("Channel deleted", "adminStatus");
+            await loadChannels();
+          } catch (err) {
+            setStatus(`Channel delete error: ${err.message}`, "adminStatus");
+          }
+        });
+      });
+    }
+
+    function setExtractionSettings(settings) {
+      const semantic = settings.semantic_extraction || {};
+      const schema = settings.schema_validation || {};
+      const trust = settings.source_trust_policy || {};
+      document.getElementById("semanticEnabled").checked = !!semantic.enabled;
+      document.getElementById("semanticProvider").value = semantic.provider || "";
+      document.getElementById("semanticModel").value = semantic.model || "";
+      document.getElementById("semanticEndpoint").value = semantic.endpoint || "";
+      document.getElementById("semanticTimeout").value = semantic.timeout_seconds ?? 20;
+      document.getElementById("semanticRetries").value = semantic.max_retries ?? 2;
+      document.getElementById("schemaEnabled").checked = !!schema.enabled;
+      document.getElementById("schemaName").value = schema.schema_name || "";
+      document.getElementById("autoApplyThreshold").value = schema.auto_apply_threshold ?? 0.9;
+      document.getElementById("reviewThreshold").value = schema.review_threshold ?? 0.65;
+      document.getElementById("requireEvidence").checked = !!schema.require_source_evidence;
+      document.getElementById("allowForwardJumps").checked = !!schema.allow_forward_status_jumps;
+      document.getElementById("conservativeStatusMode").checked = schema.conservative_status_mode !== false;
+      document.getElementById("preferPdf").checked = !!trust.prefer_pdf_over_email_body;
+      document.getElementById("freeformAutoApply").checked = !!trust.allow_freeform_email_auto_apply;
+      document.getElementById("trustedDomains").value = (trust.trusted_domains || []).join(", ");
+    }
+
+    async function loadExtractionSettings() {
+      if (state.role !== "admin") return;
+      const settings = await api("/settings", { headers: authHeaders() });
+      setExtractionSettings(settings);
+    }
+
+    async function saveExtractionSettings() {
+      if (state.role !== "admin") return;
+      const payload = {
+        semantic_extraction: {
+          enabled: document.getElementById("semanticEnabled").checked,
+          provider: document.getElementById("semanticProvider").value.trim() || "openai",
+          model: document.getElementById("semanticModel").value.trim() || "gpt-4.1-mini",
+          endpoint: document.getElementById("semanticEndpoint").value.trim(),
+          timeout_seconds: Number(document.getElementById("semanticTimeout").value || 20),
+          max_retries: Number(document.getElementById("semanticRetries").value || 2),
+        },
+        schema_validation: {
+          enabled: document.getElementById("schemaEnabled").checked,
+          schema_name: document.getElementById("schemaName").value.trim() || "shipment_event_v1",
+          auto_apply_threshold: Number(document.getElementById("autoApplyThreshold").value || 0.9),
+          review_threshold: Number(document.getElementById("reviewThreshold").value || 0.65),
+          require_source_evidence: document.getElementById("requireEvidence").checked,
+          allow_forward_status_jumps: document.getElementById("allowForwardJumps").checked,
+          conservative_status_mode: document.getElementById("conservativeStatusMode").checked,
+        },
+        source_trust_policy: {
+          prefer_pdf_over_email_body: document.getElementById("preferPdf").checked,
+          allow_freeform_email_auto_apply: document.getElementById("freeformAutoApply").checked,
+          trusted_domains: document.getElementById("trustedDomains").value
+            .split(",")
+            .map(v => v.trim())
+            .filter(Boolean),
+        },
+      };
+      await api("/settings", {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify(payload),
+      });
+      setStatus("Extraction settings saved", "adminStatus");
+      await loadExtractionSettings();
+    }
+
+    function clearSemanticResult() {
+      document.getElementById("semanticResultPanel").classList.add("hidden");
+      document.getElementById("semanticResultProvider").textContent = "";
+      document.getElementById("semanticResultModel").textContent = "";
+      document.getElementById("semanticResultConfidence").textContent = "";
+      document.getElementById("semanticResultStatus").textContent = "";
+      document.getElementById("semanticResultFields").textContent = "";
+      document.getElementById("semanticResultEvidence").textContent = "";
+      document.getElementById("semanticResultNotes").textContent = "";
+    }
+
+    function renderSemanticResult(result) {
+      document.getElementById("semanticResultPanel").classList.remove("hidden");
+      document.getElementById("semanticResultProvider").textContent = result.provider_name || "";
+      document.getElementById("semanticResultModel").textContent = result.model_name || "";
+      document.getElementById("semanticResultConfidence").textContent = result.confidence ?? "";
+      document.getElementById("semanticResultStatus").textContent = result.status || "None";
+      document.getElementById("semanticResultFields").textContent = JSON.stringify(result.extracted_data || {}, null, 2);
+      document.getElementById("semanticResultEvidence").textContent = (result.source_evidence || []).join("\n") || "No evidence returned.";
+      document.getElementById("semanticResultNotes").textContent = result.review_notes || "No review notes.";
+    }
+
+    async function testSemanticExtraction() {
+      if (state.role !== "admin") return;
+      try {
+        clearSemanticResult();
+        const result = await api("/semantic-extraction/test", {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({
+            subject: document.getElementById("semanticTestSubject").value.trim(),
+            body: document.getElementById("semanticTestBody").value.trim(),
+          }),
+        });
+        renderSemanticResult(result);
+        const fields = Object.entries(result.extracted_data || {})
+          .map(([key, value]) => `${key}=${value}`)
+          .join(", ");
+        setStatus(
+          `Semantic OK. Confidence ${result.confidence}. Status ${result.status || "none"}. ${fields || "No fields returned."}`,
+          "adminStatus"
+        );
+      } catch (err) {
+        clearSemanticResult();
+        setStatus(`Semantic test error: ${err.message}`, "adminStatus");
+      }
+    }
+
+    async function loadExtractionAudits() {
+      if (state.role !== "admin") return;
+      const data = await api("/extraction-audits?limit=20", { headers: authHeaders() });
+      const body = document.getElementById("extractionAuditsBody");
+      body.innerHTML = "";
+      data.items.forEach(item => {
+        const tr = document.createElement("tr");
+        if (item.decision !== "accepted") tr.classList.add("warn");
+        tr.innerHTML = `
+          <td>${item.timestamp || ""}</td>
+          <td>${item.decision || ""}</td>
+          <td>${item.provider_name || ""}</td>
+          <td>${item.model_name || ""}</td>
+          <td>${item.confidence_score ?? ""}</td>
+          <td>${item.shipment_id || ""}</td>
+          <td>${(item.validation_errors || []).join("; ")}</td>
+        `;
+        body.appendChild(tr);
+      });
+    }
+
+    async function resolveVerification(itemId) {
+      await api(`/verification-items/${itemId}/resolve`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ action: "keep_current", note: "resolved in UI" }),
+      });
+      await Promise.all([loadVerification(), loadShipments(), loadMetrics()]);
+    }
+
+    async function openDetail(id) {
+      const s = await api(`/shipments/${id}`, { headers: authHeaders() });
+      state.selectedShipment = s;
+      document.getElementById("editCustomer").value = s.customer || "";
+      document.getElementById("editStatus").value = s.status || "";
+      document.getElementById("editOwner").value = s.owner || "";
+      document.getElementById("editMxCarrier").value = s.mx_carrier || "";
+      document.getElementById("editUsCarrier").value = s.us_carrier || "";
+      document.getElementById("editPickupDate").value = s.pickup_date || "";
+      document.getElementById("editEta").value = s.eta || "";
+      document.getElementById("editComments").value = s.comments || "";
+      document.getElementById("detailModal").classList.add("open");
+    }
+
+    async function saveDetail() {
+      if (!state.selectedShipment) return;
+      const payload = {
+        customer: document.getElementById("editCustomer").value || null,
+        status: document.getElementById("editStatus").value || null,
+        owner: document.getElementById("editOwner").value || null,
+        mx_carrier: document.getElementById("editMxCarrier").value || null,
+        us_carrier: document.getElementById("editUsCarrier").value || null,
+        pickup_date: document.getElementById("editPickupDate").value || null,
+        eta: document.getElementById("editEta").value || null,
+        comments: document.getElementById("editComments").value || null,
+      };
+      await api(`/shipments/${state.selectedShipment.id}`, {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify(payload),
+      });
+      setStatus("Saved", "detailStatus");
+      await Promise.all([loadShipments(), loadMetrics()]);
+    }
+
+    async function overrideField() {
+      if (!state.selectedShipment) return;
+      const field = prompt("Field to override (example: status)");
+      if (!field) return;
+      const value = prompt("New value");
+      const reason = prompt("Reason (required)");
+      if (!reason) return;
+      await api(`/shipments/${state.selectedShipment.id}/override`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ field, value, reason }),
+      });
+      setStatus("Override saved", "detailStatus");
+      await Promise.all([loadShipments(), loadMetrics()]);
+    }
+
+    async function exportCsv() {
+      const q = document.getElementById("searchInput").value.trim();
+      const status = document.getElementById("statusFilter").value.trim();
+      const lane = document.getElementById("laneFilter").value.trim();
+      const owner = document.getElementById("ownerFilter").value.trim();
+      const blocked = document.getElementById("blockedFilter").value;
+      const manual = document.getElementById("manualFilter").value;
+      const includeClosed = document.getElementById("includeClosed").checked;
+      const params = new URLSearchParams({ format: "csv" });
+      if (q) params.set("q", q);
+      if (status) params.set("status", status);
+      if (lane) params.set("lane", lane);
+      if (owner) params.set("owner", owner);
+      if (blocked) params.set("blocked", blocked);
+      if (manual && !isCustomerView()) params.set("manual_verification", manual);
+      if (includeClosed && !isCustomerView()) params.set("include_closed", "true");
+      const data = await api(`/shipments/export?${params.toString()}`, { headers: authHeaders() });
+      const blob = new Blob([data], { type: "text/csv" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "shipments.csv";
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    async function addVocabulary() {
+      try {
+        const phrase = document.getElementById("vocabPhrase").value.trim();
+        const mapped_status = document.getElementById("vocabStatus").value;
+        await api("/vocabulary", {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({ phrase, mapped_status, language: "en" }),
+        });
+        setStatus("Vocabulary updated", "adminStatus");
+      } catch (err) {
+        setStatus(`Admin error: ${err.message}`, "adminStatus");
+      }
+    }
+
+    async function addChannel() {
+      try {
+        const channel_name = document.getElementById("channelName").value.trim() || "Default Channel";
+        const provider_type = document.getElementById("providerType").value;
+        const folder_label = document.getElementById("channelFolder").value.trim() || null;
+        const active = document.getElementById("channelActive").checked;
+        const auth_data = {
+          host: document.getElementById("channelHost").value.trim() || "imap.gmail.com",
+          username: document.getElementById("channelUsername").value.trim(),
+          password: document.getElementById("channelPassword").value,
+          query: document.getElementById("gmailQuery").value.trim() || "newer_than:2d",
+          search_criteria: "ALL",
+          max_results: 20,
+          use_ssl: true,
+        };
+        await api("/intake/channels", {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({
+            channel_name,
+            provider_type,
+            auth_data,
+            folder_label,
+            active,
+            sync_mode: "polling",
+            polling_interval: 60
+          }),
+        });
+        setStatus("Intake channel saved", "adminStatus");
+        await loadChannels();
+      } catch (err) {
+        setStatus(`Admin error: ${err.message}`, "adminStatus");
+      }
+    }
+
+    async function syncIntake() {
+      try {
+        const result = await api("/intake/sync", {
+          method: "POST",
+          headers: authHeaders(),
+        });
+        setStatus(`Sync finished. Processed ${result.processed_messages}, created ${result.created_shipments}.`, "adminStatus");
+        await Promise.all([loadShipments(), loadVerification(), loadMetrics(), loadChannels()]);
+      } catch (err) {
+        setStatus(`Sync error: ${err.message}`, "adminStatus");
+        await loadChannels();
+      }
+    }
+
+    async function clearTestData() {
+      if (!confirm("Clear all shipments/messages/attachments/audits/errors? Channel settings will be kept.")) return;
+      try {
+        const result = await api("/admin/clear-test-data", {
+          method: "POST",
+          headers: authHeaders(),
+        });
+        const deleted = result.deleted || {};
+        setStatus(
+          `Data cleared. Shipments ${deleted.shipments || 0}, messages ${deleted.messages || 0}, attachments ${deleted.attachments || 0}.`,
+          "adminStatus"
+        );
+        await Promise.all([loadShipments(), loadVerification(), loadMetrics(), loadChannels(), loadExtractionAudits()]);
+      } catch (err) {
+        setStatus(`Clear data error: ${err.message}`, "adminStatus");
+      }
+    }
+
+    function activateTab(name) {
+      const map = { shipments: "shipmentsTab", verification: "verificationTab", admin: "adminTab" };
+      if (name === "admin" && state.role !== "admin") {
+        name = "shipments";
+      }
+      document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+      document.querySelector(`.tab[data-tab="${name}"]`).classList.add("active");
+      Object.values(map).forEach(id => document.getElementById(id).classList.add("hidden"));
+      document.getElementById(map[name]).classList.remove("hidden");
+    }
+
+    document.getElementById("loginBtn").addEventListener("click", login);
+    document.getElementById("logoutBtn").addEventListener("click", logout);
+    document.getElementById("searchBtn").addEventListener("click", loadShipments);
+    document.getElementById("exportBtn").addEventListener("click", exportCsv);
+    document.getElementById("saveEditBtn").addEventListener("click", saveDetail);
+    document.getElementById("openOverrideBtn").addEventListener("click", overrideField);
+    document.getElementById("closeModalBtn").addEventListener("click", () => document.getElementById("detailModal").classList.remove("open"));
+    document.getElementById("addVocabBtn").addEventListener("click", addVocabulary);
+    document.getElementById("addChannelBtn").addEventListener("click", addChannel);
+    document.getElementById("syncIntakeBtn").addEventListener("click", syncIntake);
+    document.getElementById("clearDataBtn").addEventListener("click", clearTestData);
+    document.getElementById("loadSettingsBtn").addEventListener("click", loadExtractionSettings);
+    document.getElementById("saveSettingsBtn").addEventListener("click", saveExtractionSettings);
+    document.getElementById("testSemanticBtn").addEventListener("click", testSemanticExtraction);
+    document.querySelectorAll(".tab").forEach(tab => tab.addEventListener("click", () => activateTab(tab.dataset.tab)));
+  </script>
+</body>
+</html>
