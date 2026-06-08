@@ -202,6 +202,10 @@ docker compose -f "$PROJECTS_DIR/$PROJECT_REF/docker-compose.yml" \
   exec -T db psql -U supabase_admin -h 127.0.0.1 \
   -f /docker-entrypoint-initdb.d/init-scripts/99-roles.sql 2>&1
 
+# Create empty secrets.env (required by edge-runtime bind mount)
+touch "$PROJECTS_DIR/$PROJECT_REF/secrets.env"
+echo "→ secrets.env created (empty) at $PROJECTS_DIR/$PROJECT_REF/secrets.env"
+
 # Seed default edge function (main entrypoint) into the functions volume
 echo "→ Seeding default edge function..."
 FUNCTIONS_VOLUME="msd-${PROJECT_REF}-functions"

@@ -270,7 +270,8 @@ services:
     volumes:
       - functions-data:/home/deno/functions
       - deno-cache:/root/.cache/deno
-    command: ["start", "--main-service", "/home/deno/functions/main"]
+      - ./secrets.env:/home/deno/secrets.env:ro
+    command: ["start", "--main-service", "/home/deno/functions/main", "--env-file", "/home/deno/secrets.env"]
     networks:
       - msd-${PROJECT_REF}
 

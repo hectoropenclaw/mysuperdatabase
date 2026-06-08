@@ -192,6 +192,262 @@ app.post('/orgs', async (c) => {
   }
 })
 
+// ─── Helper: resolve project by ref + auth ───────────────────────────────────
+async function resolveProject(ref: string, userId: string) {
+  const { rows } = await pool.query(
+    `SELECT p.* FROM projects p
+     JOIN org_members om ON om.org_id = p.org_id
+     WHERE p.ref=$1 AND om.user_id=$2 AND p.status='active'`,
+    [ref, userId]
+  )
+  return rows[0] ?? null
+}
+
+// ─── Edge Functions: list ─────────────────────────────────────────────────────
+app.get('/projects/:ref/functions', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await resolveProject(ref, userId)
+  if (!project) return c.json({ error: 'Not found' }, 404)
+
+  const { rows } = await pool.query(
+    `SELECT id, slug, name, status, verify_jwt, entrypoint_path, import_map_path, created_at, updated_at
+     FROM edge_functions WHERE project_id=$1 ORDER BY created_at DESC`,
+    [project.id]
+  )
+  return c.json(rows)
+})
+
+// ─── Edge Functions: deploy (multipart form upload) ──────────────────────────
+app.post('/projects/:ref/functions', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await resolveProject(ref, userId)
+  if (!project) return c.json({ error: 'Not found' }, 404)
+
+  const formData = await c.req.formData()
+  const slug = formData.get('slug') as string | null
+  const name = (formData.get('name') as string | null) ?? slug
+  const verifyJwt = formData.get('verify_jwt') !== 'false'
+  const entrypointPath = (formData.get('entrypoint_path') as string | null) ?? 'index.ts'
+  const importMapPath = formData.get('import_map_path') as string | null
+
+  if (!slug) return c.json({ error: 'slug is required' }, 400)
+
+  // Build file list from form: files field is JSON metadata, actual blobs follow
+  const filesJson = formData.get('files') as string | null
+  let files: { name: string; content: string }[] = []
+
+  if (filesJson) {
+    const fileMeta: { name: string }[] = JSON.parse(filesJson)
+    files = await Promise.all(
+      fileMeta.map(async (f) => {
+        const blob = formData.get(f.name) as File | null
+        return { name: f.name, content: blob ? await blob.text() : '' }
+      })
+    )
+  }
+
+  // Upsert function record
+  const { rows } = await pool.query(
+    `INSERT INTO edge_functions(project_id, slug, name, status, verify_jwt, entrypoint_path, import_map_path)
+     VALUES($1, $2, $3, 'ACTIVE', $4, $5, $6)
+     ON CONFLICT (project_id, slug) DO UPDATE
+       SET name=$3, verify_jwt=$4, entrypoint_path=$5, import_map_path=$6, updated_at=NOW()
+     RETURNING *`,
+    [project.id, slug, name, verifyJwt, entrypointPath, importMapPath]
+  )
+
+  // Deploy files to container via deploy-function.sh
+  if (files.length > 0) {
+    const { exec } = await import('child_process')
+    const { promisify } = await import('util')
+    const execAsync = promisify(exec)
+    const payload = JSON.stringify({ files })
+    const scriptPath = process.env.INFRA_SCRIPTS_PATH ?? '/root/mysuperdatabase/infra/scripts'
+    await execAsync(
+      `echo '${payload.replace(/'/g, "'\\''")}' | bash ${scriptPath}/deploy-function.sh ${ref} ${slug}`
+    )
+  }
+
+  return c.json(rows[0], 201)
+})
+
+// ─── Edge Functions: get one ──────────────────────────────────────────────────
+app.get('/projects/:ref/functions/:slug', async (c) => {
+  const userId = c.get('userId')
+  const { ref, slug } = c.req.param()
+  const project = await resolveProject(ref, userId)
+  if (!project) return c.json({ error: 'Not found' }, 404)
+
+  const { rows } = await pool.query(
+    `SELECT * FROM edge_functions WHERE project_id=$1 AND slug=$2`,
+    [project.id, slug]
+  )
+  if (!rows.length) return c.json({ error: 'Function not found' }, 404)
+  return c.json(rows[0])
+})
+
+// ─── Edge Functions: get body (source code) ───────────────────────────────────
+app.get('/projects/:ref/functions/:slug/body', async (c) => {
+  const userId = c.get('userId')
+  const { ref, slug } = c.req.param()
+  const project = await resolveProject(ref, userId)
+  if (!project) return c.json({ error: 'Not found' }, 404)
+
+  const { rows } = await pool.query(
+    `SELECT entrypoint_path FROM edge_functions WHERE project_id=$1 AND slug=$2`,
+    [project.id, slug]
+  )
+  if (!rows.length) return c.json({ error: 'Function not found' }, 404)
+
+  // Read source from container
+  const { exec } = await import('child_process')
+  const { promisify } = await import('util')
+  const execAsync = promisify(exec)
+  const container = `msd-${ref}-edge-runtime-1`
+  const entrypoint = rows[0].entrypoint_path ?? 'index.ts'
+  try {
+    const { stdout } = await execAsync(
+      `docker exec ${container} cat /home/deno/functions/${slug}/${entrypoint}`
+    )
+    return new Response(stdout, { headers: { 'Content-Type': 'application/octet-stream' } })
+  } catch {
+    return c.json({ error: 'Could not read function body' }, 500)
+  }
+})
+
+// ─── Edge Functions: update metadata ─────────────────────────────────────────
+app.patch('/projects/:ref/functions/:slug', async (c) => {
+  const userId = c.get('userId')
+  const { ref, slug } = c.req.param()
+  const project = await resolveProject(ref, userId)
+  if (!project) return c.json({ error: 'Not found' }, 404)
+
+  const body = await c.req.json()
+  const { name, verify_jwt, status } = body
+
+  const { rows } = await pool.query(
+    `UPDATE edge_functions
+     SET name=COALESCE($3,name), verify_jwt=COALESCE($4,verify_jwt), status=COALESCE($5,status), updated_at=NOW()
+     WHERE project_id=$1 AND slug=$2 RETURNING *`,
+    [project.id, slug, name ?? null, verify_jwt ?? null, status ?? null]
+  )
+  if (!rows.length) return c.json({ error: 'Function not found' }, 404)
+  return c.json(rows[0])
+})
+
+// ─── Edge Functions: delete ───────────────────────────────────────────────────
+app.delete('/projects/:ref/functions/:slug', async (c) => {
+  const userId = c.get('userId')
+  const { ref, slug } = c.req.param()
+  const project = await resolveProject(ref, userId)
+  if (!project) return c.json({ error: 'Not found' }, 404)
+
+  await pool.query(`DELETE FROM edge_functions WHERE project_id=$1 AND slug=$2`, [project.id, slug])
+
+  // Remove files from container
+  const { exec } = await import('child_process')
+  const { promisify } = await import('util')
+  const execAsync = promisify(exec)
+  const container = `msd-${ref}-edge-runtime-1`
+  await execAsync(`docker exec ${container} rm -rf /home/deno/functions/${slug}`).catch(() => {})
+
+  return c.json({ success: true })
+})
+
+// ─── Secrets: list ────────────────────────────────────────────────────────────
+app.get('/projects/:ref/secrets', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await resolveProject(ref, userId)
+  if (!project) return c.json({ error: 'Not found' }, 404)
+
+  const { rows } = await pool.query(
+    `SELECT id, name, created_at, updated_at FROM secrets WHERE project_id=$1 ORDER BY name`,
+    [project.id]
+  )
+  return c.json(rows)
+})
+
+// ─── Secrets: bulk upsert ─────────────────────────────────────────────────────
+app.post('/projects/:ref/secrets', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await resolveProject(ref, userId)
+  if (!project) return c.json({ error: 'Not found' }, 404)
+
+  const secrets: { name: string; value: string }[] = await c.req.json()
+  if (!Array.isArray(secrets) || !secrets.every((s) => s.name && s.value !== undefined)) {
+    return c.json({ error: 'Expected array of {name, value}' }, 400)
+  }
+
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    for (const { name, value } of secrets) {
+      await client.query(
+        `INSERT INTO secrets(project_id, name, value) VALUES($1,$2,$3)
+         ON CONFLICT (project_id, name) DO UPDATE SET value=$3, updated_at=NOW()`,
+        [project.id, name, value]
+      )
+    }
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
+
+  // Regenerate secrets.env and restart edge-runtime
+  const allSecrets = await pool.query(
+    `SELECT name, value FROM secrets WHERE project_id=$1`,
+    [project.id]
+  )
+  const envContent = allSecrets.rows.map((r: any) => `${r.name}=${r.value}`).join('\n')
+  const { exec } = await import('child_process')
+  const { promisify } = await import('util')
+  const execAsync = promisify(exec)
+  const scriptPath = process.env.INFRA_SCRIPTS_PATH ?? '/root/mysuperdatabase/infra/scripts'
+  await execAsync(
+    `printf '%s' '${envContent.replace(/'/g, "'\\''")}' | bash ${scriptPath}/sync-secrets.sh ${ref}`
+  )
+
+  return c.json({ success: true })
+})
+
+// ─── Secrets: delete by name ──────────────────────────────────────────────────
+app.delete('/projects/:ref/secrets', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await resolveProject(ref, userId)
+  if (!project) return c.json({ error: 'Not found' }, 404)
+
+  const body: { name: string }[] = await c.req.json()
+  const names = body.map((s) => s.name)
+  await pool.query(
+    `DELETE FROM secrets WHERE project_id=$1 AND name = ANY($2::text[])`,
+    [project.id, names]
+  )
+
+  // Regenerate secrets.env and restart edge-runtime
+  const allSecrets = await pool.query(
+    `SELECT name, value FROM secrets WHERE project_id=$1`,
+    [project.id]
+  )
+  const envContent = allSecrets.rows.map((r: any) => `${r.name}=${r.value}`).join('\n')
+  const { exec } = await import('child_process')
+  const { promisify } = await import('util')
+  const execAsync = promisify(exec)
+  const scriptPath = process.env.INFRA_SCRIPTS_PATH ?? '/root/mysuperdatabase/infra/scripts'
+  await execAsync(
+    `printf '%s' '${envContent.replace(/'/g, "'\\''")}' | bash ${scriptPath}/sync-secrets.sh ${ref}`
+  )
+
+  return c.json({ success: true })
+})
+
 export const GET = handle(app)
 export const POST = handle(app)
 export const DELETE = handle(app)
