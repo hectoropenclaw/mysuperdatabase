@@ -224,8 +224,10 @@ app.post('/projects', async (c) => {
     .then(async (keys) => {
       await pool.query(
         `UPDATE projects SET status='active', site_url=$1, anon_key=$2,
-         service_role_key=$3, db_password=$4, jwt_secret=$5 WHERE ref=$6`,
-        [keys.siteUrl, keys.anonKey, keys.serviceKey, keys.dbPassword, keys.jwtSecret, ref]
+         service_role_key=$3, db_password=$4, jwt_secret=$5,
+         storage_s3_access_key=$6, storage_s3_secret_key=$7 WHERE ref=$8`,
+        [keys.siteUrl, keys.anonKey, keys.serviceKey, keys.dbPassword, keys.jwtSecret,
+         keys.s3AccessKey, keys.s3SecretKey, ref]
       )
     })
     .catch(async (err) => {
@@ -854,6 +856,203 @@ app.get('/projects/:ref/resources/:id', (c) => {
 app.post('/projects/:ref/transfer', (c) =>
   c.json({ message: 'Project transfer not supported' }, 501)
 )
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// STORAGE PROXY — /platform/storage/{ref}/* → project Storage API via Kong
+// Storage API is at {siteUrl}/storage/v1/
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function getProjectStorageCreds(ref: string, userId: string) {
+  const { rows } = await pool.query(
+    `SELECT p.service_role_key, p.site_url, p.storage_s3_access_key, p.storage_s3_secret_key, p.status
+     FROM projects p JOIN org_members om ON om.org_id=p.org_id
+     WHERE p.ref=$1 AND om.user_id=$2 AND p.status='active'`,
+    [ref, userId]
+  )
+  return rows[0] ?? null
+}
+
+async function storageProxy(
+  siteUrl: string,
+  serviceKey: string,
+  storagePath: string,
+  method: string,
+  body?: string | null,
+  contentType?: string | null
+) {
+  const url = `${siteUrl}/storage/v1/${storagePath}`
+  const res = await fetch(url, {
+    method,
+    headers: {
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+      ...(contentType ? { 'Content-Type': contentType } : { 'Content-Type': 'application/json' }),
+    },
+    body: body ?? undefined,
+  })
+  const text = await res.text()
+  return new Response(text, {
+    status: res.status,
+    headers: { 'Content-Type': res.headers.get('Content-Type') ?? 'application/json' },
+  })
+}
+
+// Helper to get body as text from Hono context
+async function bodyText(c: any): Promise<string | null> {
+  try { return await c.req.text() } catch { return null }
+}
+
+// ─── Buckets ──────────────────────────────────────────────────────────────────
+app.get('/storage/:ref/buckets', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const creds = await getProjectStorageCreds(ref, userId)
+  if (!creds) return c.json([], 200)
+  return storageProxy(creds.site_url, creds.service_role_key, 'bucket', 'GET')
+})
+
+app.post('/storage/:ref/buckets', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const creds = await getProjectStorageCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found' }, 404)
+  const body = await bodyText(c)
+  return storageProxy(creds.site_url, creds.service_role_key, 'bucket', 'POST', body)
+})
+
+app.get('/storage/:ref/buckets/:id', async (c) => {
+  const userId = c.get('userId')
+  const { ref, id } = c.req.param()
+  const creds = await getProjectStorageCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found' }, 404)
+  return storageProxy(creds.site_url, creds.service_role_key, `bucket/${id}`, 'GET')
+})
+
+app.patch('/storage/:ref/buckets/:id', async (c) => {
+  const userId = c.get('userId')
+  const { ref, id } = c.req.param()
+  const creds = await getProjectStorageCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found' }, 404)
+  const body = await bodyText(c)
+  return storageProxy(creds.site_url, creds.service_role_key, `bucket/${id}`, 'PUT', body)
+})
+
+app.delete('/storage/:ref/buckets/:id', async (c) => {
+  const userId = c.get('userId')
+  const { ref, id } = c.req.param()
+  const creds = await getProjectStorageCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found' }, 404)
+  return storageProxy(creds.site_url, creds.service_role_key, `bucket/${id}`, 'DELETE')
+})
+
+app.post('/storage/:ref/buckets/:id/empty', async (c) => {
+  const userId = c.get('userId')
+  const { ref, id } = c.req.param()
+  const creds = await getProjectStorageCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found' }, 404)
+  return storageProxy(creds.site_url, creds.service_role_key, `bucket/${id}/empty`, 'POST', '{}')
+})
+
+// ─── Objects ──────────────────────────────────────────────────────────────────
+app.post('/storage/:ref/buckets/:id/objects/list', async (c) => {
+  const userId = c.get('userId')
+  const { ref, id } = c.req.param()
+  const creds = await getProjectStorageCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found' }, 404)
+  const body = await bodyText(c)
+  return storageProxy(creds.site_url, creds.service_role_key, `object/list/${id}`, 'POST', body)
+})
+
+app.delete('/storage/:ref/buckets/:id/objects', async (c) => {
+  const userId = c.get('userId')
+  const { ref, id } = c.req.param()
+  const creds = await getProjectStorageCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found' }, 404)
+  const body = await bodyText(c)
+  return storageProxy(creds.site_url, creds.service_role_key, `object/${id}`, 'DELETE', body)
+})
+
+app.post('/storage/:ref/buckets/:id/objects/move', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const creds = await getProjectStorageCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found' }, 404)
+  const body = await bodyText(c)
+  return storageProxy(creds.site_url, creds.service_role_key, 'object/move', 'POST', body)
+})
+
+app.post('/storage/:ref/buckets/:id/objects/sign', async (c) => {
+  const userId = c.get('userId')
+  const { ref, id } = c.req.param()
+  const creds = await getProjectStorageCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found' }, 404)
+  const body = await bodyText(c)
+  // body contains { paths: [...], expiresIn: number }
+  return storageProxy(creds.site_url, creds.service_role_key, `object/sign/${id}`, 'POST', body)
+})
+
+app.post('/storage/:ref/buckets/:id/objects/sign-multi', async (c) => {
+  const userId = c.get('userId')
+  const { ref, id } = c.req.param()
+  const creds = await getProjectStorageCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found' }, 404)
+  const body = await bodyText(c)
+  return storageProxy(creds.site_url, creds.service_role_key, `object/sign/${id}`, 'POST', body)
+})
+
+app.post('/storage/:ref/buckets/:id/objects/public-url', async (c) => {
+  const userId = c.get('userId')
+  const { ref, id } = c.req.param()
+  const creds = await getProjectStorageCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found' }, 404)
+  const body = await bodyText(c)
+  return storageProxy(creds.site_url, creds.service_role_key, `object/public-url/${id}`, 'POST', body)
+})
+
+// ─── S3 Credentials ───────────────────────────────────────────────────────────
+app.get('/storage/:ref/credentials', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const creds = await getProjectStorageCreds(ref, userId)
+  if (!creds) return c.json([], 200)
+  // Proxy to storage-api S3 access keys endpoint
+  return storageProxy(creds.site_url, creds.service_role_key, 's3/accesskeys', 'GET')
+})
+
+app.post('/storage/:ref/credentials', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const creds = await getProjectStorageCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found' }, 404)
+  const body = await bodyText(c)
+  return storageProxy(creds.site_url, creds.service_role_key, 's3/accesskeys', 'POST', body)
+})
+
+app.delete('/storage/:ref/credentials/:id', async (c) => {
+  const userId = c.get('userId')
+  const { ref, id } = c.req.param()
+  const creds = await getProjectStorageCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found' }, 404)
+  return storageProxy(creds.site_url, creds.service_role_key, `s3/accesskeys/${id}`, 'DELETE')
+})
+
+// ─── Archive (export) ─────────────────────────────────────────────────────────
+app.post('/storage/:ref/archive', async (c) => {
+  return c.json({ message: 'Storage archive export not yet supported.' }, 501)
+})
+
+// ─── Vector / Analytics buckets — stub (advanced features) ────────────────────
+app.get('/storage/:ref/vector-buckets', (c) => c.json([]))
+app.post('/storage/:ref/vector-buckets', (c) => c.json({ message: 'Vector storage not supported' }, 501))
+app.get('/storage/:ref/vector-buckets/:id', (c) => c.json({ message: 'Not found' }, 404))
+app.delete('/storage/:ref/vector-buckets/:id', (c) => c.json({ message: 'Not found' }, 404))
+app.get('/storage/:ref/vector-buckets/:id/indexes', (c) => c.json([]))
+app.post('/storage/:ref/vector-buckets/:id/indexes', (c) => c.json({ message: 'Not supported' }, 501))
+app.get('/storage/:ref/analytics-buckets', (c) => c.json([]))
+app.post('/storage/:ref/analytics-buckets', (c) => c.json({ message: 'Analytics storage not supported' }, 501))
+app.get('/storage/:ref/analytics-buckets/:id/namespaces', (c) => c.json([]))
+app.post('/storage/:ref/analytics-buckets/:id/namespaces', (c) => c.json({ message: 'Not supported' }, 501))
+app.get('/storage/:ref/analytics-buckets/:id/namespaces/:ns/tables', (c) => c.json([]))
 
 // ─── Catch-all: 404 for unimplemented endpoints ───────────────────────────────
 app.all('*', (c) => c.json({ message: 'Not implemented' }, 404))

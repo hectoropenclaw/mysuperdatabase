@@ -80,8 +80,10 @@ app.post('/projects', async (c) => {
     .then(async (keys) => {
       await pool.query(
         `UPDATE projects SET status='active', site_url=$1, anon_key=$2,
-         service_role_key=$3, db_password=$4, jwt_secret=$5 WHERE ref=$6`,
-        [keys.siteUrl, keys.anonKey, keys.serviceKey, keys.dbPassword, keys.jwtSecret, ref]
+         service_role_key=$3, db_password=$4, jwt_secret=$5,
+         storage_s3_access_key=$6, storage_s3_secret_key=$7 WHERE ref=$8`,
+        [keys.siteUrl, keys.anonKey, keys.serviceKey, keys.dbPassword, keys.jwtSecret,
+         keys.s3AccessKey, keys.s3SecretKey, ref]
       )
     })
     .catch(async (err) => {

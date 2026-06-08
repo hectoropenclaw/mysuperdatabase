@@ -133,15 +133,53 @@ echo "→ DB roles.sql generated at $PROJECTS_DIR/$PROJECT_REF/db/roles.sql"
 envsubst < "$TEMPLATES_DIR/docker-compose.project.yml" > "$PROJECTS_DIR/$PROJECT_REF/docker-compose.yml"
 echo "→ docker-compose.yml generated at $PROJECTS_DIR/$PROJECT_REF/docker-compose.yml"
 
-# ─── Create MinIO bucket ─────────────────────────────────────────────────────
+# ─── Create MinIO bucket + per-project user ──────────────────────────────────
 MINIO_ENDPOINT="${MINIO_ENDPOINT:-http://localhost:9000}"
+MINIO_ROOT_USER="${MINIO_ROOT_USER:-minioadmin}"
+MINIO_ROOT_PASSWORD="${MINIO_ROOT_PASSWORD:-minioadmin}"
+
+# Generate per-project S3 access key / secret (20 + 40 chars, alphanumeric)
+S3_ACCESS_KEY="msd$(openssl rand -hex 9)"       # 20 chars
+S3_SECRET_KEY="$(openssl rand -hex 20)"          # 40 chars
+
 if command -v mc &>/dev/null; then
-  mc alias set msd "$MINIO_ENDPOINT" "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY" --quiet 2>/dev/null || true
-  mc mb "msd/msd-${PROJECT_REF}" --quiet 2>/dev/null || echo "  bucket msd-${PROJECT_REF} may already exist"
-  echo "→ MinIO bucket msd-${PROJECT_REF} ready"
+  mc alias set msd-root "$MINIO_ENDPOINT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" --quiet 2>/dev/null || true
+
+  # Create bucket
+  mc mb "msd-root/msd-${PROJECT_REF}" --quiet 2>/dev/null \
+    || echo "  bucket msd-${PROJECT_REF} may already exist"
+
+  # Create per-project MinIO user
+  mc admin user add msd-root "$S3_ACCESS_KEY" "$S3_SECRET_KEY" --quiet 2>/dev/null || true
+
+  # Create a policy granting full access only to this project's bucket
+  POLICY_JSON=$(cat <<POLICY
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": ["s3:*"],
+    "Resource": [
+      "arn:aws:s3:::msd-${PROJECT_REF}",
+      "arn:aws:s3:::msd-${PROJECT_REF}/*"
+    ]
+  }]
+}
+POLICY
+)
+  echo "$POLICY_JSON" | mc admin policy create msd-root "policy-${PROJECT_REF}" /dev/stdin --quiet 2>/dev/null || true
+  mc admin policy attach msd-root "policy-${PROJECT_REF}" --user "$S3_ACCESS_KEY" --quiet 2>/dev/null || true
+
+  echo "→ MinIO: bucket msd-${PROJECT_REF} + user ${S3_ACCESS_KEY} ready"
 else
-  echo "  [WARN] mc not found — create bucket msd-${PROJECT_REF} manually in MinIO"
+  echo "  [WARN] mc not found — create bucket msd-${PROJECT_REF} manually"
+  S3_ACCESS_KEY="$MINIO_ACCESS_KEY"
+  S3_SECRET_KEY="$MINIO_SECRET_KEY"
 fi
+
+# Override storage env in docker-compose to use per-project keys
+export MINIO_ACCESS_KEY="$S3_ACCESS_KEY"
+export MINIO_SECRET_KEY="$S3_SECRET_KEY"
 
 # ─── Start DB only first, set passwords, then start everything ───────────────
 echo "→ Starting DB for $PROJECT_REF..."
@@ -197,7 +235,9 @@ cat > "$PROJECTS_DIR/$PROJECT_REF/keys.json" <<KEYS
   "anon_key": "$ANON_KEY",
   "service_key": "$SERVICE_KEY",
   "db_password": "$DB_PASSWORD",
-  "jwt_secret": "$JWT_SECRET"
+  "jwt_secret": "$JWT_SECRET",
+  "s3_access_key": "$S3_ACCESS_KEY",
+  "s3_secret_key": "$S3_SECRET_KEY"
 }
 KEYS
 echo "→ Keys saved to $PROJECTS_DIR/$PROJECT_REF/keys.json"

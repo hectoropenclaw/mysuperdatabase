@@ -162,7 +162,8 @@ services:
       - coolify
 
   # ────────────────────────────────────────────────────────────
-  # Storage — File storage (S3-compatible via MinIO)
+  # Storage — File storage (S3-compatible via shared MinIO)
+  # Joins coolify network to reach msd-minio container directly.
   # ────────────────────────────────────────────────────────────
   storage:
     <<: *restart
@@ -186,7 +187,8 @@ services:
       FILE_SIZE_LIMIT: 52428800
       STORAGE_BACKEND: s3
       GLOBAL_S3_BUCKET: msd-${PROJECT_REF}
-      GLOBAL_S3_ENDPOINT: http://minio:9000
+      # msd-minio is the shared MinIO container on the coolify network
+      GLOBAL_S3_ENDPOINT: http://msd-minio:9000
       GLOBAL_S3_FORCE_PATH_STYLE: "true"
       GLOBAL_S3_PROTOCOL: http
       AWS_ACCESS_KEY_ID: ${MINIO_ACCESS_KEY:-minioadmin}
@@ -199,8 +201,11 @@ services:
       TUS_URL_EXPIRY_MS: 3600000
       IMGPROXY_URL: http://imgproxy:5001
       ENABLE_IMAGE_TRANSFORMATION: "true"
+      # Public S3 URL for pre-signed URLs (Cloudflare-proxied MinIO)
+      STORAGE_S3_ENDPOINT: https://s3.mysuperdatabase.com
     networks:
       - msd-${PROJECT_REF}
+      - coolify
 
   # ────────────────────────────────────────────────────────────
   # Imgproxy — On-the-fly image transformations for Storage

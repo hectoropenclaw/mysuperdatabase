@@ -19,6 +19,8 @@ export interface ProvisionResult {
   serviceKey: string
   dbPassword: string
   jwtSecret: string
+  s3AccessKey: string
+  s3SecretKey: string
 }
 
 export async function provisionProject(ref: string): Promise<ProvisionResult> {
@@ -47,6 +49,8 @@ export async function provisionProject(ref: string): Promise<ProvisionResult> {
     serviceKey: keys.service_key,
     dbPassword: keys.db_password,
     jwtSecret: keys.jwt_secret,
+    s3AccessKey: keys.s3_access_key ?? '',
+    s3SecretKey: keys.s3_secret_key ?? '',
   }
 }
 

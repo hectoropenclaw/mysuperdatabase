@@ -1,0 +1,48 @@
+name: msd-minio
+
+services:
+  minio:
+    image: minio/minio:RELEASE.2025-05-24T17-08-30Z
+    container_name: msd-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      # Allows storage-api to generate pre-signed URLs at the public hostname
+      MINIO_SERVER_URL: https://s3.mysuperdatabase.com
+      MINIO_BROWSER_REDIRECT_URL: https://minio.mysuperdatabase.com
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    labels:
+      # S3 API — used by all project storage containers
+      - "traefik.enable=true"
+      - "traefik.http.routers.msd-minio-s3.rule=Host(`s3.mysuperdatabase.com`)"
+      - "traefik.http.routers.msd-minio-s3.entrypoints=websecure"
+      - "traefik.http.routers.msd-minio-s3.tls=true"
+      - "traefik.http.routers.msd-minio-s3.tls.certresolver=cloudflare"
+      - "traefik.http.services.msd-minio-s3.loadbalancer.server.port=9000"
+      - "traefik.http.routers.msd-minio-s3.service=msd-minio-s3"
+      # Console UI
+      - "traefik.http.routers.msd-minio-console.rule=Host(`minio.mysuperdatabase.com`)"
+      - "traefik.http.routers.msd-minio-console.entrypoints=websecure"
+      - "traefik.http.routers.msd-minio-console.tls=true"
+      - "traefik.http.routers.msd-minio-console.tls.certresolver=cloudflare"
+      - "traefik.http.services.msd-minio-console.loadbalancer.server.port=9001"
+      - "traefik.http.routers.msd-minio-console.service=msd-minio-console"
+    networks:
+      - coolify
+
+volumes:
+  minio-data:
+    name: msd-minio-data
+
+networks:
+  coolify:
+    external: true
+    name: coolify
