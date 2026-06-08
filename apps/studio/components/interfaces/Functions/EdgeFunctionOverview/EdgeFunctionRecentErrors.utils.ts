@@ -75,7 +75,7 @@ export const getDisplayErrorMessage = (group: RecentErrorGroup): string => {
   return summarizeErrorMessage(group.message)
 }
 
-const TROUBLESHOOTING_DOCS_BASE = 'https://supabase.com/docs/guides/troubleshooting'
+const TROUBLESHOOTING_DOCS_BASE = 'https://docs.mysuperdatabase.com/guides/troubleshooting'
 
 export const buildTroubleshootingDocsUrl = ({ statusCode }: { statusCode?: string }): string => {
   const numericStatusCode = Number(statusCode)

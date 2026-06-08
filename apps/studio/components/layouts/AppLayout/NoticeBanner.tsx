@@ -15,22 +15,22 @@ const SUPAVISOR_UPDATE_REGIONS = {
   'eu-central-1': {
     start: Date.UTC(2026, 4, 26, 13, 0, 0),
     end: Date.UTC(2026, 4, 26, 15, 0, 0),
-    url: 'https://status.supabase.com/incidents/jy1tm4wfs68t',
+    url: 'https://status.mysuperdatabase.com/incidents/jy1tm4wfs68t',
   },
   'eu-west-2': {
     start: Date.UTC(2026, 5, 9, 13, 0, 0),
     end: Date.UTC(2026, 5, 9, 15, 0, 0),
-    url: 'https://status.supabase.com/incidents/3t293hpd545z',
+    url: 'https://status.mysuperdatabase.com/incidents/3t293hpd545z',
   },
   'us-west-1': {
     start: Date.UTC(2026, 5, 2, 16, 0, 0),
     end: Date.UTC(2026, 5, 2, 18, 0, 0),
-    url: 'https://status.supabase.com/incidents/8f72bnv3xs8r',
+    url: 'https://status.mysuperdatabase.com/incidents/8f72bnv3xs8r',
   },
   'us-east-1': {
     start: Date.UTC(2026, 5, 3, 13, 0, 0),
     end: Date.UTC(2026, 5, 3, 15, 0, 0),
-    url: 'https://status.supabase.com/incidents/y8rp6dwjyplw',
+    url: 'https://status.mysuperdatabase.com/incidents/y8rp6dwjyplw',
   },
 }
 

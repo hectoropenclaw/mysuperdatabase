@@ -193,7 +193,7 @@ export const PlanUpdateSidePanel = () => {
           <div className="flex items-center justify-between w-full">
             <h4>Change subscription plan for {selectedOrganization?.name}</h4>
             <Button asChild type="default" icon={<ExternalLink />}>
-              <a href="https://supabase.com/pricing" target="_blank" rel="noreferrer">
+              <a href="https://mysuperdatabase.com/pricing" target="_blank" rel="noreferrer">
                 Pricing
               </a>
             </Button>

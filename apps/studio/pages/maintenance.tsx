@@ -24,7 +24,7 @@ const MaintenancePage: NextPageWithLayout = () => {
       </Head>
       <div className="flex flex-col items-center gap-6 text-center">
         <div className="flex items-center justify-center mb-4">
-          <img src={imgUrl} alt="Supabase" className="h-8" />
+          <img src={imgUrl} alt="mysuperdatabase" className="h-8" />
         </div>
         <div className="space-y-1">
           <h1 className="text-2xl font-medium text-foreground">Under Maintenance</h1>
@@ -35,10 +35,10 @@ const MaintenancePage: NextPageWithLayout = () => {
         <p className="text-sm text-foreground-lighter max-w-xs mx-auto">
           If you need support while the dashboard is inaccessible, you can email us at{' '}
           <a
-            href="mailto:support+maintenance@supabase.io"
+            href="mailto:support@mysuperdatabase.com"
             className="text-foreground-light underline hover:text-foreground"
           >
-            support+maintenance@supabase.io
+            support@mysuperdatabase.com
           </a>
         </p>
         <div className="flex flex-col items-center gap-2 mt-4">

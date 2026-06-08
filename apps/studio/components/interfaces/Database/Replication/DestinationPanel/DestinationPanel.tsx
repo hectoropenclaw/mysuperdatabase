@@ -131,7 +131,7 @@ export const DestinationPanel = ({ onSuccessCreateReadReplica }: DestinationPane
                       iconRight={<ArrowUpRight size={16} strokeWidth={1.5} />}
                     >
                       <Link
-                        href="https://forms.supabase.com/pg_replicate"
+                        href="https://forms.mysuperdatabase.com/pg_replicate"
                         target="_blank"
                         rel="noreferrer"
                       >

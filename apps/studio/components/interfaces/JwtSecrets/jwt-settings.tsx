@@ -504,7 +504,7 @@ export const JWTSettings = () => {
                     {disableLegacyJwtSecretRotation ? (
                       <Button type="default" icon={<ExternalLink className="size-4" />} asChild>
                         <Link
-                          href="https://supabase.com/docs/guides/auth/signing-keys#getting-started"
+                          href="https://docs.mysuperdatabase.com/guides/auth/signing-keys#getting-started"
                           target="_blank"
                           rel="noreferrer"
                         >

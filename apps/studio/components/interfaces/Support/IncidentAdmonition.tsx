@@ -89,7 +89,7 @@ export function IncidentAdmonition({ isActive, className }: IncidentAdmonitionPr
             description={getStatusDescription(overallStatus, hasMultipleIncidents, allSameStatus)}
             actions={
               <Button asChild type="default" icon={<ExternalLink strokeWidth={1.5} />}>
-                <Link href="https://status.supabase.com/" target="_blank" rel="noreferrer">
+                <Link href="https://status.mysuperdatabase.com/" target="_blank" rel="noreferrer">
                   Status page
                 </Link>
               </Button>

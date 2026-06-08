@@ -42,7 +42,7 @@ const ScopedTokens: NextPageWithLayout = () => {
           <div className="flex items-center gap-x-2">
             <Button asChild type="default" icon={<ExternalLink />}>
               <a
-                href="https://supabase.com/docs/reference/api/introduction"
+                href="https://docs.mysuperdatabase.com/reference/api/introduction"
                 target="_blank"
                 rel="noreferrer"
               >
@@ -51,7 +51,7 @@ const ScopedTokens: NextPageWithLayout = () => {
             </Button>
             <Button asChild type="default" icon={<ExternalLink />}>
               <a
-                href="https://supabase.com/docs/reference/cli/start"
+                href="https://docs.mysuperdatabase.com/reference/cli/start"
                 target="_blank"
                 rel="noreferrer"
               >

@@ -362,7 +362,7 @@ export const ORMS: ConnectionType[] = [
     key: 'prisma',
     label: 'Prisma',
     icon: 'prisma',
-    guideLink: 'https://supabase.com/partners/integrations/prisma',
+    guideLink: 'https://mysuperdatabase.com/partners/integrations/prisma',
     children: [],
   },
   {

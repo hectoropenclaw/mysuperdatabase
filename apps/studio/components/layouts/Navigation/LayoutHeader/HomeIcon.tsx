@@ -39,7 +39,7 @@ export const HomeIcon = ({ className }: { className?: string }) => {
       className={cn('items-center justify-center shrink-0 flex', className)}
     >
       <img
-        alt="Supabase"
+        alt="mysuperdatabase"
         src={`${router.basePath}/img/supabase-logo.svg`}
         className={largeLogo ? 'h-[20px]' : 'h-[18px]'}
       />

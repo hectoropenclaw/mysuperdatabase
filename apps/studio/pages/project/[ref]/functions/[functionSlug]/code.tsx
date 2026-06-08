@@ -170,7 +170,7 @@ const CodePage = () => {
                 </li>
                 <li>
                   3. Or use the{' '}
-                  <InlineLink href="https://supabase.com/docs/reference/api/v1-deploy-a-function">
+                  <InlineLink href="https://docs.mysuperdatabase.com/reference/api/v1-deploy-a-function">
                     Management API
                   </InlineLink>
                 </li>

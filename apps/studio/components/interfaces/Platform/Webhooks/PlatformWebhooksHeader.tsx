@@ -78,7 +78,7 @@ export const PlatformWebhooksHeader = ({
           <PageHeaderDescription>{headerDescription}</PageHeaderDescription>
         </PageHeaderSummary>
         <PageHeaderAside>
-          {hasSelectedEndpoint ? endpointActions : <DocsButton href="https://supabase.com/docs" />}
+          {hasSelectedEndpoint ? endpointActions : <DocsButton href="https://docs.mysuperdatabase.com" />}
         </PageHeaderAside>
       </PageHeaderMeta>
     </PageHeader>

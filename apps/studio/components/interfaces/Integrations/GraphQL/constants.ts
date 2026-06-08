@@ -7,4 +7,4 @@ export const PG_GRAPHQL_EXTENSION_NAME = 'pg_graphql'
  */
 export const DEFAULT_INTROSPECTION_SCHEMA = 'public'
 
-export const PG_GRAPHQL_CONFIG_DOCS_URL = 'https://supabase.com/docs/guides/graphql#supabase-studio'
+export const PG_GRAPHQL_CONFIG_DOCS_URL = 'https://docs.mysuperdatabase.com/guides/graphql#supabase-studio'

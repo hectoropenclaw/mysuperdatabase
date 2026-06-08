@@ -140,7 +140,7 @@ export function SupportFormStatusButton() {
             )
           }
         >
-          <Link href="https://status.supabase.com/" target="_blank" rel="noreferrer">
+          <Link href="https://status.mysuperdatabase.com/" target="_blank" rel="noreferrer">
             {isLoading
               ? 'Checking status'
               : isError

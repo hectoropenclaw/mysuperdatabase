@@ -110,7 +110,7 @@ export const SignInMfaForm = ({ context = 'sign-in' }: SignInMfaFormProps) => {
               <Link href="/sign-in">Back to sign in</Link>
             </Button>
             <Button asChild type="default">
-              <Link href="https://supabase.com/support" target="_blank" rel="noreferrer">
+              <Link href="https://mysuperdatabase.com/support" target="_blank" rel="noreferrer">
                 Contact support
               </Link>
             </Button>

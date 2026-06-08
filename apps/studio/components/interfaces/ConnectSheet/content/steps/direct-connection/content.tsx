@@ -294,7 +294,7 @@ function DirectConnectionContent({ state, deploymentMode }: StepContentProps) {
         <p className="text-sm text-foreground-light">
           Manually{' '}
           <a
-            href="https://supabase.com/docs/guides/self-hosting/docker#exposing-your-postgres-database"
+            href="https://docs.mysuperdatabase.com/guides/self-hosting/docker#exposing-your-postgres-database"
             target="_blank"
             rel="noopener noreferrer"
             className="underline hover:text-foreground"

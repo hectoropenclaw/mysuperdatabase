@@ -232,7 +232,7 @@ export function LogsSidebarMenuV2() {
           title="New logs"
           description="Get early access"
           actions={
-            <Link href="https://forms.supabase.com/unified-logs-signup" target="_blank">
+            <Link href="https://forms.mysuperdatabase.com/unified-logs-signup" target="_blank">
               <Button type="default" size="tiny">
                 Early access
               </Button>
