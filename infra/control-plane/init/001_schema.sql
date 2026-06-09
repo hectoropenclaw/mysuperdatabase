@@ -18,14 +18,16 @@ CREATE TABLE organizations (
 
 -- ─── Users ───────────────────────────────────────────────────────────────────
 CREATE TABLE users (
-  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  email           text NOT NULL UNIQUE,
-  name            text,
-  avatar_url      text,
-  github_id       text UNIQUE,
-  google_id       text UNIQUE,
-  created_at      timestamptz NOT NULL DEFAULT now(),
-  updated_at      timestamptz NOT NULL DEFAULT now()
+  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  email            text NOT NULL UNIQUE,
+  name             text,
+  "emailVerified"  timestamptz,
+  image            text,
+  avatar_url       text,
+  github_id        text UNIQUE,
+  google_id        text UNIQUE,
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  updated_at       timestamptz NOT NULL DEFAULT now()
 );
 
 -- ─── Organization Members ─────────────────────────────────────────────────────
@@ -70,32 +72,33 @@ CREATE TABLE usage_metrics (
 );
 
 -- ─── NextAuth Sessions (for control plane auth) ───────────────────────────────
-CREATE TABLE nextauth_accounts (
-  id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id               uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  provider              text NOT NULL,
-  provider_account_id   text NOT NULL,
-  refresh_token         text,
-  access_token          text,
-  expires_at            bigint,
-  token_type            text,
-  scope                 text,
-  id_token              text,
-  session_state         text,
-  UNIQUE (provider, provider_account_id)
+CREATE TABLE accounts (
+  id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  "userId"             uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type                 text NOT NULL,
+  provider             text NOT NULL,
+  "providerAccountId"  text NOT NULL,
+  refresh_token        text,
+  access_token         text,
+  expires_at           bigint,
+  token_type           text,
+  scope                text,
+  id_token             text,
+  session_state        text,
+  UNIQUE (provider, "providerAccountId")
 );
 
-CREATE TABLE nextauth_sessions (
-  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  session_token text NOT NULL UNIQUE,
-  user_id       uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  expires       timestamptz NOT NULL
+CREATE TABLE sessions (
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  "sessionToken" text NOT NULL UNIQUE,
+  "userId"       uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires        timestamptz NOT NULL
 );
 
-CREATE TABLE nextauth_verification_tokens (
-  identifier  text NOT NULL,
-  token       text NOT NULL UNIQUE,
-  expires     timestamptz NOT NULL,
+CREATE TABLE verification_tokens (
+  identifier text NOT NULL,
+  token      text NOT NULL UNIQUE,
+  expires    timestamptz NOT NULL,
   PRIMARY KEY (identifier, token)
 );
 
