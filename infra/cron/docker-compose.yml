@@ -1,0 +1,33 @@
+# mysuperdatabase — Cron container for scheduled backups
+# Deploy: cd ~/mysuperdatabase/infra/cron && docker compose up -d
+
+services:
+  backup-cron:
+    image: alpine:3.20
+    container_name: msd-backup-cron
+    restart: unless-stopped
+    environment:
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://msd-minio:9000}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-changeme}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
+      BACKUP_BUCKET: msd-backups
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /root/mysuperdatabase/infra:/infra:ro
+      - /root/mysuperdatabase/infra/scripts/backup.sh:/usr/local/bin/backup.sh:ro
+    command: >
+      sh -c "
+        apk add --no-cache bash postgresql-client gzip curl python3 &&
+        curl -sSL https://dl.min.io/client/mc/release/linux-amd64/mc -o /usr/local/bin/mc &&
+        chmod +x /usr/local/bin/mc &&
+        echo '0 3 * * * BACKUP_ALL=1 /usr/local/bin/backup.sh >> /var/log/backup.log 2>&1' | crontab - &&
+        crond -f -l 6
+      "
+    networks:
+      - coolify
+
+networks:
+  coolify:
+    external: true
+    name: coolify

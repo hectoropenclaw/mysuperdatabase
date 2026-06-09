@@ -1,0 +1,42 @@
+name: CLI Release
+
+on:
+  push:
+    tags:
+      - 'cli/v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and release CLI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: apps/cli/go.sum
+
+      - name: Build all platforms
+        working-directory: apps/cli
+        run: make build-all
+        env:
+          CGO_ENABLED: 0
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: CLI ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          files: |
+            apps/cli/dist/mysuperdatabase-linux-amd64
+            apps/cli/dist/mysuperdatabase-linux-arm64
+            apps/cli/dist/mysuperdatabase-darwin-amd64
+            apps/cli/dist/mysuperdatabase-darwin-arm64
+            apps/cli/dist/mysuperdatabase-windows-amd64.exe
+          generate_release_notes: true

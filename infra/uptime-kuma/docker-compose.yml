@@ -1,0 +1,30 @@
+# mysuperdatabase — Status page (Uptime Kuma)
+# Accessible at: https://status.mysuperdatabase.com
+#
+# Deploy: cd ~/mysuperdatabase/infra/uptime-kuma && docker compose up -d
+
+services:
+  uptime-kuma:
+    image: louislam/uptime-kuma:1.23.15
+    container_name: msd-uptime-kuma
+    restart: unless-stopped
+    volumes:
+      - uptime-kuma-data:/app/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.msd-status.rule=Host(`status.mysuperdatabase.com`)"
+      - "traefik.http.routers.msd-status.entrypoints=websecure"
+      - "traefik.http.routers.msd-status.tls=true"
+      - "traefik.http.routers.msd-status.tls.certresolver=cloudflare"
+      - "traefik.http.services.msd-status.loadbalancer.server.port=3001"
+    networks:
+      - coolify
+
+volumes:
+  uptime-kuma-data:
+    name: msd-uptime-kuma-data
+
+networks:
+  coolify:
+    external: true
+    name: coolify

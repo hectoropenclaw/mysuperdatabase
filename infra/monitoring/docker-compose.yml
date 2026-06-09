@@ -1,0 +1,109 @@
+# mysuperdatabase — Central monitoring stack
+# Prometheus + Grafana + Loki + Promtail + cAdvisor + node-exporter
+#
+# Deploy: cd ~/mysuperdatabase/infra/monitoring && docker compose up -d
+# Grafana: https://grafana.mysuperdatabase.com
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.53.1
+    container_name: msd-prometheus
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - coolify
+
+  grafana:
+    image: grafana/grafana:11.1.3
+    container_name: msd-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-changeme}
+      GF_SERVER_DOMAIN: grafana.mysuperdatabase.com
+      GF_SERVER_ROOT_URL: https://grafana.mysuperdatabase.com
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.msd-grafana.rule=Host(`grafana.mysuperdatabase.com`)"
+      - "traefik.http.routers.msd-grafana.entrypoints=websecure"
+      - "traefik.http.routers.msd-grafana.tls=true"
+      - "traefik.http.routers.msd-grafana.tls.certresolver=cloudflare"
+      - "traefik.http.services.msd-grafana.loadbalancer.server.port=3000"
+    depends_on:
+      - prometheus
+      - loki
+    networks:
+      - coolify
+
+  loki:
+    image: grafana/loki:3.1.0
+    container_name: msd-loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/config.yml
+    volumes:
+      - ./loki-config.yml:/etc/loki/config.yml:ro
+      - loki-data:/loki
+    networks:
+      - coolify
+
+  promtail:
+    image: grafana/promtail:3.1.0
+    container_name: msd-promtail
+    restart: unless-stopped
+    command: -config.file=/etc/promtail/config.yml
+    volumes:
+      - ./promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    networks:
+      - coolify
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: msd-cadvisor
+    restart: unless-stopped
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    networks:
+      - coolify
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: msd-node-exporter
+    restart: unless-stopped
+    pid: host
+    command:
+      - '--path.rootfs=/host'
+    volumes:
+      - /:/host:ro,rslave
+    networks:
+      - coolify
+
+volumes:
+  prometheus-data:
+    name: msd-prometheus-data
+  grafana-data:
+    name: msd-grafana-data
+  loki-data:
+    name: msd-loki-data
+
+networks:
+  coolify:
+    external: true
+    name: coolify

@@ -18,6 +18,17 @@ acls:
   - consumer: service_role
     group: admin
 
+# Global rate limiting plugin
+# Free tier: 500 req/min per consumer (overridden to higher on Pro/Team via provision.sh)
+plugins:
+  - name: rate-limiting
+    config:
+      minute: ${KONG_RATE_LIMIT_PER_MINUTE:-500}
+      hour: ${KONG_RATE_LIMIT_PER_HOUR:-5000}
+      policy: local
+      hide_client_headers: false
+      fault_tolerant: true
+
 services:
   ## REST API
   - name: rest-v1

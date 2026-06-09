@@ -76,6 +76,11 @@ export SMTP_SENDER_NAME="${SMTP_SENDER_NAME:-mysuperdatabase}"
 export MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-minioadmin}"
 export MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-minioadmin}"
 
+# Rate limiting per plan (can be overridden by caller)
+# Free: 500/min 5K/hr | Pro: 5K/min 100K/hr | Team: unlimited (very high)
+export KONG_RATE_LIMIT_PER_MINUTE="${KONG_RATE_LIMIT_PER_MINUTE:-500}"
+export KONG_RATE_LIMIT_PER_HOUR="${KONG_RATE_LIMIT_PER_HOUR:-5000}"
+
 # GoTrue toggles — all default-off unless caller exports them
 export GOTRUE_DISABLE_SIGNUP="${GOTRUE_DISABLE_SIGNUP:-false}"
 export GOTRUE_JWT_EXP="${GOTRUE_JWT_EXP:-3600}"

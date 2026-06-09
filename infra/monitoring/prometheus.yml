@@ -1,0 +1,34 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: mysuperdatabase
+
+scrape_configs:
+  # Host metrics
+  - job_name: node
+    static_configs:
+      - targets: ['msd-node-exporter:9100']
+
+  # Container metrics
+  - job_name: cadvisor
+    static_configs:
+      - targets: ['msd-cadvisor:8080']
+    metric_relabel_configs:
+      # Keep only msd-* containers
+      - source_labels: [container_label_com_docker_compose_project]
+        regex: msd-.*
+        action: keep
+
+  # Kong (per-project) — auto-discovered via file SD
+  # provision.sh adds each project's Kong scrape target to /etc/prometheus/targets/kong/
+  - job_name: kong
+    file_sd_configs:
+      - files:
+          - /etc/prometheus/targets/kong/*.json
+        refresh_interval: 30s
+
+  # Prometheus self
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
