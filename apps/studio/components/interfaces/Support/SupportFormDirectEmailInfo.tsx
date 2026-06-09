@@ -16,16 +16,16 @@ export function SupportFormDirectEmailContent({ projectRef }: SupportFormDirectE
         Please email us directly at
         <span className="inline-flex items-center gap-x-1">
           <a
-            href={`mailto:support@supanow.com?subject=${encodeURIComponent('Support Request')}${hasProjectRef ? `${encodeURIComponent(' for Project ID: ')}${encodeURIComponent(projectRef)}` : ''}&body=${encodeURIComponent('Here is a detailed description of the problem I am experiencing and any other information that might be helpful...')}`}
+            href={`mailto:support@db.hconsulting.appm?subject=${encodeURIComponent('Support Request')}${hasProjectRef ? `${encodeURIComponent(' for Project ID: ')}${encodeURIComponent(projectRef)}` : ''}&body=${encodeURIComponent('Here is a detailed description of the problem I am experiencing and any other information that might be helpful...')}`}
             className="hover:text-foreground transition-colors duration-100"
           >
             <code className="text-code-inline !text-foreground-light underline decoration-foreground-lighter/50 hover:decoration-foreground-lighter/80 transition-colors duration-100">
-              support@supanow.com
+              support@db.hconsulting.appm
             </code>
           </a>
           <CopyButton
             type="text"
-            text="support@supanow.com"
+            text="support@db.hconsulting.appm"
             iconOnly
             onClick={() => toast.success('Copied email address to clipboard')}
           />

@@ -32,11 +32,11 @@ GOTRUE_MAILER_URLPATHS_RECOVERY=/auth/v1/verify
 GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE=/auth/v1/verify
 
 # ─── SMTP ─────────────────────────────────────────────────────────────────
-GOTRUE_SMTP_HOST=${SMTP_HOST:-smtp.supanow.com}
+GOTRUE_SMTP_HOST=${SMTP_HOST:-smtp.db.hconsulting.appm}
 GOTRUE_SMTP_PORT=${SMTP_PORT:-587}
 GOTRUE_SMTP_USER=${SMTP_USER:-}
 GOTRUE_SMTP_PASS=${SMTP_PASS:-}
-GOTRUE_SMTP_ADMIN_EMAIL=${SMTP_ADMIN_EMAIL:-noreply@supanow.com}
+GOTRUE_SMTP_ADMIN_EMAIL=${SMTP_ADMIN_EMAIL:-noreply@db.hconsulting.appm}
 GOTRUE_SMTP_SENDER_NAME=${SMTP_SENDER_NAME:-supanow}
 GOTRUE_SMTP_MAX_FREQUENCY=${GOTRUE_SMTP_MAX_FREQUENCY:-1s}
 

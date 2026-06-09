@@ -2,7 +2,7 @@
 # Prometheus + Grafana + Loki + Promtail + cAdvisor + node-exporter
 #
 # Deploy: cd ~/supanow/infra/monitoring && docker compose up -d
-# Grafana: https://grafana.supanow.com
+# Grafana: https://grafana.hconsulting.app
 
 services:
   prometheus:
@@ -27,15 +27,15 @@ services:
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-changeme}
-      GF_SERVER_DOMAIN: grafana.supanow.com
-      GF_SERVER_ROOT_URL: https://grafana.supanow.com
+      GF_SERVER_DOMAIN: grafana.hconsulting.app
+      GF_SERVER_ROOT_URL: https://grafana.hconsulting.app
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - grafana-data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.spn-grafana.rule=Host(`grafana.supanow.com`)"
+      - "traefik.http.routers.spn-grafana.rule=Host(`grafana.hconsulting.app`)"
       - "traefik.http.routers.spn-grafana.entrypoints=websecure"
       - "traefik.http.routers.spn-grafana.tls=true"
       - "traefik.http.routers.spn-grafana.tls.certresolver=cloudflare"

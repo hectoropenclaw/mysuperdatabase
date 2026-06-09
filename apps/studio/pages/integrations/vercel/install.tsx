@@ -218,7 +218,7 @@ const VercelIntegration: NextPageWithLayout = () => {
                 <AlertDescription className="prose">
                   You will need to create a Supabase Organization before you can install the Vercel
                   Integration. You can create a new organization{' '}
-                  <Link href="https://supanow.com/dashboard/new" target="_blank">
+                  <Link href="https://db.hconsulting.appm/dashboard/new" target="_blank">
                     here
                   </Link>
                   .

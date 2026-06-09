@@ -21,7 +21,7 @@ const SignInSSOPage: NextPageWithLayout = () => {
         <div>
           <span className="text-foreground-light">Interested in SSO?</span>{' '}
           <a
-            href="https://supanow.com/contact/enterprise"
+            href="https://db.hconsulting.appm/contact/enterprise"
             rel="noopener noreferrer"
             className="underline text-foreground hover:text-foreground-light transition"
           >

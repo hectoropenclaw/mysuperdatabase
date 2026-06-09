@@ -72,7 +72,7 @@ export const InlineCode = memo(
 InlineCode.displayName = 'InlineCode'
 
 export const Hyperlink = memo(({ href, children }: { href?: string; children?: ReactNode }) => {
-  const isExternalURL = !href?.startsWith('https://supanow.com/dashboard')
+  const isExternalURL = !href?.startsWith('https://db.hconsulting.appm/dashboard')
   const safeUrl = defaultUrlTransform(href ?? '')
   const isSafeUrl = safeUrl.length > 0
 

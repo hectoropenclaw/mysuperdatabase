@@ -26,7 +26,7 @@ export const TIA = () => {
         <div className="@lg:flex items-center justify-center h-full">
           <Button asChild type="default" iconRight={<Download />}>
             <a
-              href="https://supanow.com/downloads/docs/Supabase+TIA+250314.pdf"
+              href="https://db.hconsulting.appm/downloads/docs/Supabase+TIA+250314.pdf"
               target="_blank"
               rel="noreferrer noopener"
               download={true}

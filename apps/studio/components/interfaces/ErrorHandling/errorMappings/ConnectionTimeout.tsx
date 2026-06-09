@@ -30,7 +30,7 @@ export function ConnectionTimeoutTroubleshooting() {
       <TroubleshootingGuideSection
         number={2}
         errorType={ERROR_TYPE}
-        href="https://docs.supanow.com/guides/troubleshooting/failed-to-run-sql-query-connection-terminated-due-to-connection-timeout"
+        href="https://docs.db.hconsulting.appm/guides/troubleshooting/failed-to-run-sql-query-connection-terminated-due-to-connection-timeout"
         description="Follow step-by-step instructions for diagnosing connection timeout issues."
       />
       <FixWithAITroubleshootingSection

@@ -96,7 +96,7 @@ const UpdatedTermsOfServiceDialog = () => {
           <p>
             The updated Terms (Version 2) will take effect on June 6, 2026. By continuing to use the
             Services after that date, you agree to the updated Terms. You can review the changes{' '}
-            <InlineLink href="https://supanow.com/terms">here</InlineLink>.
+            <InlineLink href="https://db.hconsulting.appm/terms">here</InlineLink>.
           </p>
 
           <p>

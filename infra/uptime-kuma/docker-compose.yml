@@ -1,5 +1,5 @@
 # supanow — Status page (Uptime Kuma)
-# Accessible at: https://status.supanow.com
+# Accessible at: https://status.hconsulting.app
 #
 # Deploy: cd ~/supanow/infra/uptime-kuma && docker compose up -d
 
@@ -12,7 +12,7 @@ services:
       - uptime-kuma-data:/app/data
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.msd-status.rule=Host(`status.supanow.com`)"
+      - "traefik.http.routers.msd-status.rule=Host(`status.hconsulting.app`)"
       - "traefik.http.routers.msd-status.entrypoints=websecure"
       - "traefik.http.routers.msd-status.tls=true"
       - "traefik.http.routers.msd-status.tls.certresolver=cloudflare"

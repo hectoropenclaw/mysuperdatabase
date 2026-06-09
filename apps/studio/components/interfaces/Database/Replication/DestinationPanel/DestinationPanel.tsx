@@ -131,7 +131,7 @@ export const DestinationPanel = ({ onSuccessCreateReadReplica }: DestinationPane
                       iconRight={<ArrowUpRight size={16} strokeWidth={1.5} />}
                     >
                       <Link
-                        href="https://forms.supanow.com/pg_replicate"
+                        href="https://forms.db.hconsulting.appm/pg_replicate"
                         target="_blank"
                         rel="noreferrer"
                       >

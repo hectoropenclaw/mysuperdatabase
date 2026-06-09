@@ -26,7 +26,7 @@ const VercelIntegrationWindowLayout = ({ children }: PropsWithChildren<{}>) => {
       title={title}
       integrationIcon={VERCEL_ICON}
       loading={snapshot.loading}
-      docsHref="https://supanow.com/partners/integrations/vercel"
+      docsHref="https://db.hconsulting.appm/partners/integrations/vercel"
     >
       {children}
     </IntegrationWindowLayout>

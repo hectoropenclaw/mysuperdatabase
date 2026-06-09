@@ -6,7 +6,7 @@
 #   SERVICE_KEY     — JWT signed with role=service_role
 #   DB_PASSWORD     — PostgreSQL superuser password
 #   SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS / SMTP_SENDER_NAME
-#   SITE_URL        — public URL of the project (https://${PROJECT_REF}.supanow.co)
+#   SITE_URL        — public URL of the project (https://${PROJECT_REF}.db.hconsulting.app)
 
 name: spn-${PROJECT_REF}
 
@@ -152,7 +152,7 @@ services:
       - ./kong/${PROJECT_REF}.yml:/home/kong/kong.yml:ro
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.spn-${PROJECT_REF}.rule=Host(`${PROJECT_REF}.supanow.co`)"
+      - "traefik.http.routers.spn-${PROJECT_REF}.rule=Host(`${PROJECT_REF}.db.hconsulting.app`)"
       - "traefik.http.routers.spn-${PROJECT_REF}.entrypoints=websecure"
       - "traefik.http.routers.spn-${PROJECT_REF}.tls=true"
       - "traefik.http.routers.spn-${PROJECT_REF}.tls.certresolver=cloudflare"
@@ -202,7 +202,7 @@ services:
       IMGPROXY_URL: http://imgproxy:5001
       ENABLE_IMAGE_TRANSFORMATION: "true"
       # Public S3 URL for pre-signed URLs (Cloudflare-proxied MinIO)
-      STORAGE_S3_ENDPOINT: https://s3.supanow.com
+      STORAGE_S3_ENDPOINT: https://s3.hconsulting.app
     networks:
       - spn-${PROJECT_REF}
       - coolify

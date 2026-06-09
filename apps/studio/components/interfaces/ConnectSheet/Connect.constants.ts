@@ -362,7 +362,7 @@ export const ORMS: ConnectionType[] = [
     key: 'prisma',
     label: 'Prisma',
     icon: 'prisma',
-    guideLink: 'https://supanow.com/partners/integrations/prisma',
+    guideLink: 'https://db.hconsulting.appm/partners/integrations/prisma',
     children: [],
   },
   {

@@ -75,7 +75,7 @@ export const getDisplayErrorMessage = (group: RecentErrorGroup): string => {
   return summarizeErrorMessage(group.message)
 }
 
-const TROUBLESHOOTING_DOCS_BASE = 'https://docs.supanow.com/guides/troubleshooting'
+const TROUBLESHOOTING_DOCS_BASE = 'https://docs.db.hconsulting.appm/guides/troubleshooting'
 
 export const buildTroubleshootingDocsUrl = ({ statusCode }: { statusCode?: string }): string => {
   const numericStatusCode = Number(statusCode)

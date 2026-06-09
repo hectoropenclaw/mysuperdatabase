@@ -296,8 +296,8 @@ export const RegionSelector = ({
                       <>
                         We're currently investigating an issue that may impact projects in this
                         region. Follow updates on{' '}
-                        <InlineLink href="https://status.supanow.com">
-                          status.supanow.com
+                        <InlineLink href="https://status.hconsulting.app">
+                          status.hconsulting.app
                         </InlineLink>
                         .
                       </>

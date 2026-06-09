@@ -62,12 +62,12 @@ export const STRIPE_PUBLIC_KEY =
 export const POSTHOG_URL =
   process.env.NEXT_PUBLIC_ENVIRONMENT === 'staging' ||
   process.env.NEXT_PUBLIC_ENVIRONMENT === 'local'
-    ? 'https://ph.supanow.com'
-    : 'https://ph.supanow.com'
+    ? 'https://ph.db.hconsulting.appm'
+    : 'https://ph.db.hconsulting.appm'
 
 export const USAGE_APPROACHING_THRESHOLD = 0.75
 
-export const DOCS_URL = process.env.NEXT_PUBLIC_DOCS_URL || 'https://docs.supanow.com'
+export const DOCS_URL = process.env.NEXT_PUBLIC_DOCS_URL || 'https://docs.db.hconsulting.appm'
 
 export const APP_NAME = 'supanow'
 export const APP_TAGLINE = 'Your open Postgres platform'

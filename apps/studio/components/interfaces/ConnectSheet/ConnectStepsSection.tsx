@@ -224,7 +224,7 @@ export function ConnectStepsSection({ steps, state, projectKeys }: ConnectStepsS
             actions={[
               <DocsButton
                 key="docs"
-                href="https://docs.supanow.com/guides/self-hosting/enable-mcp"
+                href="https://docs.db.hconsulting.appm/guides/self-hosting/enable-mcp"
               />,
             ]}
           />

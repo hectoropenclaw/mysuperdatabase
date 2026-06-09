@@ -170,7 +170,7 @@ const CodePage = () => {
                 </li>
                 <li>
                   3. Or use the{' '}
-                  <InlineLink href="https://docs.supanow.com/reference/api/v1-deploy-a-function">
+                  <InlineLink href="https://docs.db.hconsulting.appm/reference/api/v1-deploy-a-function">
                     Management API
                   </InlineLink>
                 </li>

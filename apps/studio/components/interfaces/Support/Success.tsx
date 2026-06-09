@@ -67,7 +67,7 @@ export const Success = ({
           type="default"
           icon={<IconDiscord size={16} fill="hsl(var(--background-default))" />}
         >
-          <Link href="https://discord.supanow.com/" target="_blank">
+          <Link href="https://discord.db.hconsulting.appm/" target="_blank">
             Join Discord
           </Link>
         </Button>

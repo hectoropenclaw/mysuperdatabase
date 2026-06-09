@@ -139,7 +139,7 @@ export const TotalUsage = ({
                 },
                 {
                   name: 'Supabase Plans',
-                  url: 'https://supanow.com/pricing',
+                  url: 'https://db.hconsulting.appm/pricing',
                 },
               ]
             : [],

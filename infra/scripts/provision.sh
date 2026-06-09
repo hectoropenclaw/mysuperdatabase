@@ -58,7 +58,7 @@ ANON_KEY=$(make_jwt "anon" "$JWT_SECRET")
 SERVICE_KEY=$(make_jwt "service_role" "$JWT_SECRET")
 REALTIME_SECRET_KEY_BASE=$(openssl rand -hex 64)
 
-SITE_URL="https://${PROJECT_REF}.supanow.co"
+SITE_URL="https://${PROJECT_REF}.db.hconsulting.app"
 
 echo "→ Provisioning project: $PROJECT_REF"
 echo "  site_url:     $SITE_URL"
@@ -67,11 +67,11 @@ echo "  service_key:  ${SERVICE_KEY:0:20}..."
 
 # ─── Generate Kong config ────────────────────────────────────────────────────
 export PROJECT_REF JWT_SECRET ANON_KEY SERVICE_KEY DB_PASSWORD SITE_URL REALTIME_SECRET_KEY_BASE
-export SMTP_HOST="${SMTP_HOST:-smtp.supanow.com}"
+export SMTP_HOST="${SMTP_HOST:-smtp.db.hconsulting.appm}"
 export SMTP_PORT="${SMTP_PORT:-587}"
 export SMTP_USER="${SMTP_USER:-}"
 export SMTP_PASS="${SMTP_PASS:-}"
-export SMTP_ADMIN_EMAIL="${SMTP_ADMIN_EMAIL:-noreply@supanow.com}"
+export SMTP_ADMIN_EMAIL="${SMTP_ADMIN_EMAIL:-noreply@db.hconsulting.appm}"
 export SMTP_SENDER_NAME="${SMTP_SENDER_NAME:-supanow}"
 export MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-minioadmin}"
 export MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-minioadmin}"

@@ -271,7 +271,7 @@ app.get('/projects/:ref/settings', async (c) => {
   return c.json({
     project: projectToStudioShape(p),
     app: { id: p.ref, name: p.name },
-    db: { host: `db.${p.ref}.supanow.co`, version: '15', port: 5432 },
+    db: { host: `db.${p.ref}.db.hconsulting.app`, version: '15', port: 5432 },
   })
 })
 
@@ -282,7 +282,7 @@ app.get('/feature-flags', (c) => {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // AUTH ENDPOINTS — proxied to per-project GoTrue admin API
-// GoTrue admin is exposed via Kong at https://{ref}.supanow.co/auth/v1/admin/*
+// GoTrue admin is exposed via Kong at https://{ref}.db.hconsulting.app/auth/v1/admin/*
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // Helper: get project's service_role_key and endpoint for GoTrue admin proxying
@@ -338,7 +338,7 @@ app.get('/auth/:ref/config', async (c) => {
     MAILER_SECURE_EMAIL_CHANGE_ENABLED: stored.MAILER_SECURE_EMAIL_CHANGE_ENABLED ?? true,
     MAILER_OTP_EXP: stored.MAILER_OTP_EXP ?? 86400,
     JWT_EXP: stored.JWT_EXP ?? 3600,
-    SMTP_ADMIN_EMAIL: stored.SMTP_ADMIN_EMAIL ?? 'noreply@supanow.com',
+    SMTP_ADMIN_EMAIL: stored.SMTP_ADMIN_EMAIL ?? 'noreply@db.hconsulting.appm',
     SMTP_HOST: stored.SMTP_HOST ?? '',
     SMTP_PORT: stored.SMTP_PORT ?? 587,
     SMTP_USER: stored.SMTP_USER ?? '',
@@ -429,7 +429,7 @@ app.patch('/auth/:ref/config', async (c) => {
     GOTRUE_SMTP_PORT: String(merged.SMTP_PORT ?? 587),
     GOTRUE_SMTP_USER: merged.SMTP_USER ?? '',
     GOTRUE_SMTP_PASS: merged.SMTP_PASS ?? '',
-    GOTRUE_SMTP_ADMIN_EMAIL: merged.SMTP_ADMIN_EMAIL ?? 'noreply@supanow.com',
+    GOTRUE_SMTP_ADMIN_EMAIL: merged.SMTP_ADMIN_EMAIL ?? 'noreply@db.hconsulting.appm',
     GOTRUE_SMTP_SENDER_NAME: merged.SMTP_SENDER_NAME ?? 'supanow',
     GOTRUE_SMTP_MAX_FREQUENCY: `${merged.SMTP_MAX_FREQUENCY ?? 1}s`,
     GOTRUE_DISABLE_SIGNUP: String(merged.DISABLE_SIGNUP ?? false),
@@ -829,9 +829,9 @@ app.get('/projects/:ref/connection-string', async (c) => {
   if (!rows.length) return c.json({ message: 'Not found' }, 404)
   const { db_password, site_url } = rows[0]
   return c.json({
-    uri: `postgresql://postgres:${db_password}@db.${ref}.supanow.co:5432/postgres`,
+    uri: `postgresql://postgres:${db_password}@db.${ref}.db.hconsulting.app:5432/postgres`,
     pooler_uri: null,
-    host: `db.${ref}.supanow.co`,
+    host: `db.${ref}.db.hconsulting.app`,
     port: 5432,
     database: 'postgres',
     user: 'postgres',
@@ -1064,7 +1064,7 @@ function generateRef(): string {
 }
 
 function projectToStudioShape(p: any) {
-  const siteUrl = p.site_url ?? `https://${p.ref}.supanow.co`
+  const siteUrl = p.site_url ?? `https://${p.ref}.db.hconsulting.app`
   const isActive = p.status === 'active'
   return {
     id: p.id,
@@ -1081,9 +1081,9 @@ function projectToStudioShape(p: any) {
     endpoint: siteUrl,
     // connectionString signals to Studio that pg-meta is ready — must be truthy when active
     connectionString: isActive
-      ? `postgresql://postgres:${p.db_password ?? 'placeholder'}@db.${p.ref}.supanow.co:5432/postgres`
+      ? `postgresql://postgres:${p.db_password ?? 'placeholder'}@db.${p.ref}.db.hconsulting.app:5432/postgres`
       : null,
-    db_host: `db.${p.ref}.supanow.co`,
+    db_host: `db.${p.ref}.db.hconsulting.app`,
     dbVersion: '150001',
     high_availability: false,
     integration_source: null,

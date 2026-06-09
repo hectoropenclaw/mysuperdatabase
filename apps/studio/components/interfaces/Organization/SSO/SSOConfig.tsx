@@ -314,7 +314,7 @@ export const SSOConfig = () => {
                             <div className="space-y-3 text-sm">
                               <div>
                                 <strong>SP-initiated (Service Provider):</strong> Users start at
-                                supanow.com, enter their email address, and are redirected to your
+                                db.hconsulting.appm, enter their email address, and are redirected to your
                                 identity provider (Okta, Azure AD, etc.) for authentication.
                                 Requires configuring email domains.
                               </div>
@@ -326,7 +326,7 @@ export const SSOConfig = () => {
                               </div>
                               <p className="text-foreground-lighter">
                                 Most enterprises use IdP-initiated flow for its simplicity. Enable
-                                SP-initiated only if you need users to start at supanow.com.{' '}
+                                SP-initiated only if you need users to start at db.hconsulting.appm.{' '}
                                 <InlineLink href={`${DOCS_URL}/guides/platform/sso#login-flows`}>
                                   Learn more about SSO flows
                                 </InlineLink>

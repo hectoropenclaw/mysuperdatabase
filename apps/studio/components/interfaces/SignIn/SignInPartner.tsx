@@ -36,14 +36,14 @@ export const SignInPartner = () => {
       <p className="text-xs text-foreground-lighter text-center max-w-[220px] sm:max-w-full">
         By continuing, you agree to Supabase’s{' '}
         <InlineLink
-          href="https://supanow.com/terms"
+          href="https://db.hconsulting.appm/terms"
           className="text-foreground-lighter hover:text-foreground"
         >
           Terms of Service
         </InlineLink>{' '}
         and{' '}
         <InlineLink
-          href="https://supanow.com/privacy"
+          href="https://db.hconsulting.appm/privacy"
           className="text-foreground-lighter hover:text-foreground"
         >
           Privacy Policy

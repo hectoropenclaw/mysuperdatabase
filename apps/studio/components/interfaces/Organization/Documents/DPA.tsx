@@ -48,7 +48,7 @@ export const DPA = () => {
             <p>
               You can review a static PDF version of our latest DPA document{' '}
               <InlineLink
-                href="https://supanow.com/downloads/docs/Supabase+DPA+260601.pdf"
+                href="https://db.hconsulting.appm/downloads/docs/Supabase+DPA+260601.pdf"
                 onClick={() => track('dpa_pdf_opened', { source: 'studio' })}
               >
                 here

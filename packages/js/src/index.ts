@@ -56,6 +56,6 @@ export function createMysuperdatabaseClient<
   options?: Parameters<typeof import('@supabase/supabase-js').createClient>[2]
 ) {
   const { createClient } = require('@supabase/supabase-js')
-  const url = `https://${projectRef}.supanow.co`
+  const url = `https://${projectRef}.db.hconsulting.app`
   return createClient<Database, SchemaName>(url, anonKey, options)
 }

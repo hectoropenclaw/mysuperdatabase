@@ -83,7 +83,7 @@ export function generateLink(pageType: PageType, link: string): string {
     case PageType.Reference:
       return `${DOCS_URL}${link}`
     case PageType.Integration:
-      return `https://supanow.com${link}`
+      return `https://db.hconsulting.appm${link}`
     case PageType.GithubDiscussion:
       return link
     default:

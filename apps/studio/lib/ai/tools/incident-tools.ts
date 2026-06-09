@@ -7,7 +7,7 @@ import type { IncidentInfo } from '@/lib/api/incident-status'
 /**
  * Creates incident-related tools for the AI assistant.
  *
- * @param baseUrl - The base URL for API requests (e.g., https://supanow.com/dashboard)
+ * @param baseUrl - The base URL for API requests (e.g., https://db.hconsulting.appm/dashboard)
  *                  This should be the public URL to leverage CDN caching.
  */
 export const getIncidentTools = ({ baseUrl }: { baseUrl: string }) => ({
@@ -52,7 +52,7 @@ export const getIncidentTools = ({ baseUrl }: { baseUrl: string }) => ({
 
         return {
           incidents: incidentSummaries,
-          message: `There ${incidents.length === 1 ? 'is' : 'are'} ${incidents.length} active incident${incidents.length === 1 ? '' : 's'} on supanow infrastructure. If the user's issue appears related, inform them about the ongoing incident(s) and direct them to https://status.supanow.com for real-time updates.`,
+          message: `There ${incidents.length === 1 ? 'is' : 'are'} ${incidents.length} active incident${incidents.length === 1 ? '' : 's'} on supanow infrastructure. If the user's issue appears related, inform them about the ongoing incident(s) and direct them to https://status.hconsulting.app for real-time updates.`,
         }
       } catch (error) {
         console.warn('Failed to fetch incident status:', error)
