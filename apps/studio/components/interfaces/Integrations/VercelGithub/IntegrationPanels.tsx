@@ -48,7 +48,7 @@ const HandleIcon = ({ type, className }: { type: HandleIconType; className?: str
 
       break
     case 'Supabase':
-      return <img src={`${BASE_PATH}/img/supabase-logo.svg`} alt="mysuperdatabase" className="w-3.5"></img>
+      return <img src={`${BASE_PATH}/img/supabase-logo.svg`} alt="supanow" className="w-3.5"></img>
       break
 
     default:

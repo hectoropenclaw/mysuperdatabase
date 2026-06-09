@@ -117,3 +117,64 @@ CREATE TRIGGER trg_users_updated_at
   BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 CREATE TRIGGER trg_projects_updated_at
   BEFORE UPDATE ON projects FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+-- 002_auth_config.sql
+-- Adds per-project auth configuration storage
+
+ALTER TABLE projects
+  ADD COLUMN IF NOT EXISTS auth_config JSONB DEFAULT '{}';
+
+COMMENT ON COLUMN projects.auth_config IS
+  'Stores GoTrue configuration overrides for this project. '
+  'Applied by update-auth-config.sh when changed via platform API.';
+-- 003_storage_credentials.sql
+-- Per-project S3 credential pairs (stored alongside service keys in projects table)
+
+ALTER TABLE projects
+  ADD COLUMN IF NOT EXISTS storage_s3_access_key TEXT,
+  ADD COLUMN IF NOT EXISTS storage_s3_secret_key TEXT;
+
+COMMENT ON COLUMN projects.storage_s3_access_key IS
+  'S3-compatible access key for this project''s MinIO bucket (created by provision.sh)';
+COMMENT ON COLUMN projects.storage_s3_secret_key IS
+  'S3-compatible secret key for this project''s MinIO bucket';
+-- 004_edge_functions.sql
+
+CREATE TABLE IF NOT EXISTS edge_functions (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id  UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  slug        TEXT NOT NULL,
+  name        TEXT NOT NULL,
+  status      TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','INACTIVE')),
+  verify_jwt  BOOLEAN NOT NULL DEFAULT true,
+  entrypoint_path TEXT NOT NULL DEFAULT 'index.ts',
+  import_map_path TEXT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (project_id, slug)
+);
+
+CREATE TABLE IF NOT EXISTS secrets (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id  UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL,
+  value       TEXT NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (project_id, name)
+);
+
+CREATE OR REPLACE FUNCTION update_updated_at_fn()
+RETURNS TRIGGER AS $$
+BEGIN NEW.updated_at = NOW(); RETURN NEW; END;
+$$ LANGUAGE plpgsql;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'edge_functions_updated_at') THEN
+    CREATE TRIGGER edge_functions_updated_at
+      BEFORE UPDATE ON edge_functions FOR EACH ROW EXECUTE FUNCTION update_updated_at_fn();
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'secrets_updated_at') THEN
+    CREATE TRIGGER secrets_updated_at
+      BEFORE UPDATE ON secrets FOR EACH ROW EXECUTE FUNCTION update_updated_at_fn();
+  END IF;
+END $$;

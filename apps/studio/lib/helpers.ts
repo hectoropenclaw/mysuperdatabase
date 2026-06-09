@@ -69,7 +69,7 @@ export const getURL = () => {
       : process?.env?.NEXT_PUBLIC_VERCEL_BRANCH_URL &&
           process.env.NEXT_PUBLIC_VERCEL_BRANCH_URL !== ''
         ? process.env.NEXT_PUBLIC_VERCEL_BRANCH_URL
-        : 'https://mysuperdatabase.com/dashboard'
+        : 'https://supanow.com/dashboard'
   return url.includes('http') ? url : `https://${url}`
 }
 

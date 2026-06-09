@@ -1,4 +1,4 @@
-export const metadata = { title: 'mysuperdatabase API' }
+export const metadata = { title: 'supanow API' }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

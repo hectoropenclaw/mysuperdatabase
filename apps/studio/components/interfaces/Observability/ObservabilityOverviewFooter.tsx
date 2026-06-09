@@ -5,7 +5,7 @@ export const ObservabilityOverviewFooter = () => {
     <div className="pt-4 pb-12 flex items-center justify-center">
       <p className="text-sm text-foreground-light">
         <Link
-          href="https://docs.mysuperdatabase.com/guides/troubleshooting"
+          href="https://docs.supanow.com/guides/troubleshooting"
           target="_blank"
           rel="noopener noreferrer"
           className="text-foreground underline underline-offset-2 decoration-foreground-muted hover:decoration-foreground transition-all"

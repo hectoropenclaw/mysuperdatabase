@@ -124,7 +124,7 @@ export const PartnerLogo = ({ src, alt }: { src: string; alt: string }) => (
 /** Supabase symbol (not the wordmark) rendered inset inside a LogoBox. */
 export const SupabaseLogo = () => (
   <LogoBox>
-    <img alt="mysuperdatabase" src={`${BASE_PATH}/img/supabase-logo.svg`} className="size-7" />
+    <img alt="supanow" src={`${BASE_PATH}/img/supabase-logo.svg`} className="size-7" />
   </LogoBox>
 )
 

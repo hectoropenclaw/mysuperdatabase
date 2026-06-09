@@ -31,7 +31,7 @@ const createBannedIPSignalItems = ({
     summary: `The IP address \`${ip}\` is temporarily blocked because of suspicious traffic or repeated failed password attempts.`,
     description:
       'This IP address is temporarily blocked because of suspicious traffic or repeated failed password attempts. If this block is expected, you can dismiss this signal or remove the ban.',
-    docsUrl: 'https://docs.mysuperdatabase.com/reference/cli/supabase-network-bans',
+    docsUrl: 'https://docs.supanow.com/reference/cli/supabase-network-bans',
     actions: [
       {
         label: 'Edit network bans',

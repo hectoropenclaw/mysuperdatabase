@@ -264,7 +264,7 @@ app.post('/projects/:ref/functions', async (c) => {
     const { promisify } = await import('util')
     const execAsync = promisify(exec)
     const payload = JSON.stringify({ files })
-    const scriptPath = process.env.INFRA_SCRIPTS_PATH ?? '/root/mysuperdatabase/infra/scripts'
+    const scriptPath = process.env.INFRA_SCRIPTS_PATH ?? '/root/supanow/infra/scripts'
     await execAsync(
       `echo '${payload.replace(/'/g, "'\\''")}' | bash ${scriptPath}/deploy-function.sh ${ref} ${slug}`
     )
@@ -409,7 +409,7 @@ app.post('/projects/:ref/secrets', async (c) => {
   const { exec } = await import('child_process')
   const { promisify } = await import('util')
   const execAsync = promisify(exec)
-  const scriptPath = process.env.INFRA_SCRIPTS_PATH ?? '/root/mysuperdatabase/infra/scripts'
+  const scriptPath = process.env.INFRA_SCRIPTS_PATH ?? '/root/supanow/infra/scripts'
   await execAsync(
     `printf '%s' '${envContent.replace(/'/g, "'\\''")}' | bash ${scriptPath}/sync-secrets.sh ${ref}`
   )
@@ -440,7 +440,7 @@ app.delete('/projects/:ref/secrets', async (c) => {
   const { exec } = await import('child_process')
   const { promisify } = await import('util')
   const execAsync = promisify(exec)
-  const scriptPath = process.env.INFRA_SCRIPTS_PATH ?? '/root/mysuperdatabase/infra/scripts'
+  const scriptPath = process.env.INFRA_SCRIPTS_PATH ?? '/root/supanow/infra/scripts'
   await execAsync(
     `printf '%s' '${envContent.replace(/'/g, "'\\''")}' | bash ${scriptPath}/sync-secrets.sh ${ref}`
   )

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# mysuperdatabase — deploy-function.sh
+# supanow — deploy-function.sh
 # Writes edge function files into the project's edge-runtime container.
 #
 # Usage (called by management API):
@@ -14,7 +14,7 @@ set -euo pipefail
 PROJECT_REF="${1:?Usage: deploy-function.sh <project_ref> <slug>}"
 SLUG="${2:?Usage: deploy-function.sh <project_ref> <slug>}"
 
-CONTAINER="msd-${PROJECT_REF}-edge-runtime-1"
+CONTAINER="spn-${PROJECT_REF}-edge-runtime-1"
 
 # Read JSON from stdin
 PAYLOAD="$(cat)"

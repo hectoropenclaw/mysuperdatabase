@@ -1,5 +1,5 @@
 {
-  "name": "mysuperdatabase",
+  "name": "supanow",
   "description": "The open-source Supabase alternative.",
   "version": "0.0.0",
   "author": "H Consulting",
@@ -61,7 +61,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/hectoropenclaw/mysuperdatabase.git"
+    "url": "git+https://github.com/hectoropenclaw/supanow.git"
   },
   "engines": {
     "pnpm": "10.24",

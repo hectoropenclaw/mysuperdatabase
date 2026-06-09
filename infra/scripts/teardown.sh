@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# mysuperdatabase — teardown.sh
+# supanow — teardown.sh
 # Stops and removes a project stack.
 #
 # Usage:
@@ -24,20 +24,20 @@ fi
 
 echo "→ Stopping stack for $PROJECT_REF..."
 docker compose -f "$COMPOSE_FILE" \
-  --project-name "msd-${PROJECT_REF}" \
+  --project-name "spn-${PROJECT_REF}" \
   down 2>&1
 
 if [ "$DELETE_DATA" = "--delete-data" ]; then
-  echo "→ Removing data volume msd-${PROJECT_REF}-db..."
-  docker volume rm "msd-${PROJECT_REF}-db" 2>/dev/null || echo "  volume not found"
+  echo "→ Removing data volume spn-${PROJECT_REF}-db..."
+  docker volume rm "spn-${PROJECT_REF}-db" 2>/dev/null || echo "  volume not found"
 
   MINIO_ENDPOINT="${MINIO_ENDPOINT:-http://localhost:9000}"
   MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-minioadmin}"
   MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-minioadmin}"
   if command -v mc &>/dev/null; then
     mc alias set msd "$MINIO_ENDPOINT" "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY" --quiet 2>/dev/null || true
-    mc rb --force "msd/msd-${PROJECT_REF}" 2>/dev/null || echo "  MinIO bucket not found"
-    echo "→ MinIO bucket msd-${PROJECT_REF} removed"
+    mc rb --force "msd/spn-${PROJECT_REF}" 2>/dev/null || echo "  MinIO bucket not found"
+    echo "→ MinIO bucket spn-${PROJECT_REF} removed"
   fi
 
   rm -rf "$PROJECTS_DIR/$PROJECT_REF"

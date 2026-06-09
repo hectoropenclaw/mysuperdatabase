@@ -273,7 +273,7 @@ export const NewScopedTokenSheet = ({
                       <div className="mt-4">
                         <Button asChild type="default" icon={<ExternalLink />}>
                           <Link
-                            href="https://api.mysuperdatabase.com/api/v0"
+                            href="https://api.supanow.com/api/v0"
                             target="_blank"
                             rel="noreferrer"
                           >

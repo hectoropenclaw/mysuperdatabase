@@ -1,4 +1,4 @@
-# mysuperdatabase — Project stack template
+# supanow — Project stack template
 # Variables substituted by provision.sh via envsubst:
 #   PROJECT_REF     — short unique slug (e.g. "abc123xyz")
 #   JWT_SECRET      — random 64-char secret for JWT signing
@@ -6,9 +6,9 @@
 #   SERVICE_KEY     — JWT signed with role=service_role
 #   DB_PASSWORD     — PostgreSQL superuser password
 #   SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS / SMTP_SENDER_NAME
-#   SITE_URL        — public URL of the project (https://${PROJECT_REF}.mysuperdatabase.co)
+#   SITE_URL        — public URL of the project (https://${PROJECT_REF}.supanow.co)
 
-name: msd-${PROJECT_REF}
+name: spn-${PROJECT_REF}
 
 x-restart: &restart
   restart: unless-stopped
@@ -46,7 +46,7 @@ services:
       - db-data:/var/lib/postgresql/data
       - ./db/roles.sql:/docker-entrypoint-initdb.d/init-scripts/99-roles.sql:ro
     networks:
-      - msd-${PROJECT_REF}
+      - spn-${PROJECT_REF}
 
   # ────────────────────────────────────────────────────────────
   # GoTrue — Auth service
@@ -66,7 +66,7 @@ services:
     env_file:
       - ./auth.env
     networks:
-      - msd-${PROJECT_REF}
+      - spn-${PROJECT_REF}
 
   # ────────────────────────────────────────────────────────────
   # PostgREST — Auto REST API
@@ -87,7 +87,7 @@ services:
       PGRST_APP_SETTINGS_JWT_EXP: 3600
     command: ["postgrest"]
     networks:
-      - msd-${PROJECT_REF}
+      - spn-${PROJECT_REF}
 
   # ────────────────────────────────────────────────────────────
   # Realtime — WebSocket broadcasts, presence, postgres changes
@@ -95,7 +95,7 @@ services:
   # ────────────────────────────────────────────────────────────
   realtime:
     <<: *restart
-    container_name: realtime-dev.msd-${PROJECT_REF}
+    container_name: realtime-dev.spn-${PROJECT_REF}
     image: supabase/realtime:v2.102.3
     depends_on:
       db:
@@ -126,7 +126,7 @@ services:
       RUN_JANITOR: "true"
       DISABLE_HEALTHCHECK_LOGGING: "true"
     networks:
-      - msd-${PROJECT_REF}
+      - spn-${PROJECT_REF}
 
   # ────────────────────────────────────────────────────────────
   # Kong — API Gateway (routes all services under one host)
@@ -152,18 +152,18 @@ services:
       - ./kong/${PROJECT_REF}.yml:/home/kong/kong.yml:ro
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.msd-${PROJECT_REF}.rule=Host(`${PROJECT_REF}.mysuperdatabase.co`)"
-      - "traefik.http.routers.msd-${PROJECT_REF}.entrypoints=websecure"
-      - "traefik.http.routers.msd-${PROJECT_REF}.tls=true"
-      - "traefik.http.routers.msd-${PROJECT_REF}.tls.certresolver=cloudflare"
-      - "traefik.http.services.msd-${PROJECT_REF}.loadbalancer.server.port=8000"
+      - "traefik.http.routers.spn-${PROJECT_REF}.rule=Host(`${PROJECT_REF}.supanow.co`)"
+      - "traefik.http.routers.spn-${PROJECT_REF}.entrypoints=websecure"
+      - "traefik.http.routers.spn-${PROJECT_REF}.tls=true"
+      - "traefik.http.routers.spn-${PROJECT_REF}.tls.certresolver=cloudflare"
+      - "traefik.http.services.spn-${PROJECT_REF}.loadbalancer.server.port=8000"
     networks:
-      - msd-${PROJECT_REF}
+      - spn-${PROJECT_REF}
       - coolify
 
   # ────────────────────────────────────────────────────────────
   # Storage — File storage (S3-compatible via shared MinIO)
-  # Joins coolify network to reach msd-minio container directly.
+  # Joins coolify network to reach spn-minio container directly.
   # ────────────────────────────────────────────────────────────
   storage:
     <<: *restart
@@ -186,9 +186,9 @@ services:
       DATABASE_URL: postgres://supabase_storage_admin:${DB_PASSWORD}@db:5432/postgres
       FILE_SIZE_LIMIT: 52428800
       STORAGE_BACKEND: s3
-      GLOBAL_S3_BUCKET: msd-${PROJECT_REF}
-      # msd-minio is the shared MinIO container on the coolify network
-      GLOBAL_S3_ENDPOINT: http://msd-minio:9000
+      GLOBAL_S3_BUCKET: spn-${PROJECT_REF}
+      # spn-minio is the shared MinIO container on the coolify network
+      GLOBAL_S3_ENDPOINT: http://spn-minio:9000
       GLOBAL_S3_FORCE_PATH_STYLE: "true"
       GLOBAL_S3_PROTOCOL: http
       AWS_ACCESS_KEY_ID: ${MINIO_ACCESS_KEY:-minioadmin}
@@ -202,9 +202,9 @@ services:
       IMGPROXY_URL: http://imgproxy:5001
       ENABLE_IMAGE_TRANSFORMATION: "true"
       # Public S3 URL for pre-signed URLs (Cloudflare-proxied MinIO)
-      STORAGE_S3_ENDPOINT: https://s3.mysuperdatabase.com
+      STORAGE_S3_ENDPOINT: https://s3.supanow.com
     networks:
-      - msd-${PROJECT_REF}
+      - spn-${PROJECT_REF}
       - coolify
 
   # ────────────────────────────────────────────────────────────
@@ -224,7 +224,7 @@ services:
       IMGPROXY_USE_ETAG: "true"
       IMGPROXY_ENABLE_WEBP_DETECTION: "true"
     networks:
-      - msd-${PROJECT_REF}
+      - spn-${PROJECT_REF}
 
   # ────────────────────────────────────────────────────────────
   # Meta (pg-meta) — Postgres metadata service used by Studio
@@ -243,7 +243,7 @@ services:
       PG_META_DB_USER: supabase_admin
       PG_META_DB_PASSWORD: ${DB_PASSWORD}
     networks:
-      - msd-${PROJECT_REF}
+      - spn-${PROJECT_REF}
 
   # ────────────────────────────────────────────────────────────
   # Edge Runtime — Deno-based edge functions
@@ -273,19 +273,19 @@ services:
       - ./secrets.env:/home/deno/secrets.env:ro
     command: ["start", "--main-service", "/home/deno/functions/main", "--env-file", "/home/deno/secrets.env"]
     networks:
-      - msd-${PROJECT_REF}
+      - spn-${PROJECT_REF}
 
 volumes:
   db-data:
-    name: msd-${PROJECT_REF}-db
+    name: spn-${PROJECT_REF}-db
   functions-data:
-    name: msd-${PROJECT_REF}-functions
+    name: spn-${PROJECT_REF}-functions
   deno-cache:
-    name: msd-${PROJECT_REF}-deno-cache
+    name: spn-${PROJECT_REF}-deno-cache
 
 networks:
-  msd-${PROJECT_REF}:
-    name: msd-${PROJECT_REF}
+  spn-${PROJECT_REF}:
+    name: spn-${PROJECT_REF}
   coolify:
     external: true
     name: coolify

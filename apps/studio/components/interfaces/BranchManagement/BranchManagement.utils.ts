@@ -8,7 +8,7 @@ import { DiskAttributesData } from '@/data/config/disk-attributes-query'
 import { DesiredInstanceSize, instanceSizeSpecs } from '@/data/projects/new-project.constants'
 import { estimateRestoreTimeFromSizeGb } from '@/lib/restore-estimate'
 
-// Ref: https://docs.mysuperdatabase.com/guides/platform/compute-and-disk
+// Ref: https://docs.supanow.com/guides/platform/compute-and-disk
 const maxDiskForCompute = new Map([
   [10, instanceSizeSpecs.micro],
   [50, instanceSizeSpecs.small],

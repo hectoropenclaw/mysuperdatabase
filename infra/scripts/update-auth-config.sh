@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# mysuperdatabase — update-auth-config.sh
+# supanow — update-auth-config.sh
 # Rewrites auth.env for a project and hot-reloads the GoTrue container.
 #
 # Usage:
@@ -51,12 +51,12 @@ export GOTRUE_EXTERNAL_EMAIL_ENABLED="${GOTRUE_EXTERNAL_EMAIL_ENABLED:-true}"
 export GOTRUE_MAILER_SECURE_EMAIL_CHANGE_ENABLED="${GOTRUE_MAILER_SECURE_EMAIL_CHANGE_ENABLED:-true}"
 export GOTRUE_MAILER_OTP_EXP="${GOTRUE_MAILER_OTP_EXP:-86400}"
 export GOTRUE_SMTP_MAX_FREQUENCY="${GOTRUE_SMTP_MAX_FREQUENCY:-1s}"
-export SMTP_HOST="${GOTRUE_SMTP_HOST:-smtp.mysuperdatabase.com}"
+export SMTP_HOST="${GOTRUE_SMTP_HOST:-smtp.supanow.com}"
 export SMTP_PORT="${GOTRUE_SMTP_PORT:-587}"
 export SMTP_USER="${GOTRUE_SMTP_USER:-}"
 export SMTP_PASS="${GOTRUE_SMTP_PASS:-}"
-export SMTP_ADMIN_EMAIL="${GOTRUE_SMTP_ADMIN_EMAIL:-noreply@mysuperdatabase.com}"
-export SMTP_SENDER_NAME="${GOTRUE_SMTP_SENDER_NAME:-mysuperdatabase}"
+export SMTP_ADMIN_EMAIL="${GOTRUE_SMTP_ADMIN_EMAIL:-noreply@supanow.com}"
+export SMTP_SENDER_NAME="${GOTRUE_SMTP_SENDER_NAME:-supanow}"
 export GOTRUE_EXTERNAL_PHONE_ENABLED="${GOTRUE_EXTERNAL_PHONE_ENABLED:-false}"
 export GOTRUE_SMS_AUTOCONFIRM="${GOTRUE_SMS_AUTOCONFIRM:-false}"
 export GOTRUE_SMS_PROVIDER="${GOTRUE_SMS_PROVIDER:-twilio}"
@@ -72,7 +72,7 @@ export GOTRUE_SECURITY_REFRESH_TOKEN_ROTATION_ENABLED="${GOTRUE_SECURITY_REFRESH
 export GOTRUE_SECURITY_REFRESH_TOKEN_REUSE_INTERVAL="${GOTRUE_SECURITY_REFRESH_TOKEN_REUSE_INTERVAL:-10}"
 export GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_REAUTHENTICATION="${GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_REAUTHENTICATION:-false}"
 export GOTRUE_MFA_TOTP_ENROLLMENT_MAX_FREQUENCY="${GOTRUE_MFA_TOTP_ENROLLMENT_MAX_FREQUENCY:-0}"
-export GOTRUE_MFA_TOTP_ISSUER="${GOTRUE_MFA_TOTP_ISSUER:-mysuperdatabase}"
+export GOTRUE_MFA_TOTP_ISSUER="${GOTRUE_MFA_TOTP_ISSUER:-supanow}"
 export GOTRUE_PASSWORD_HIBP_ENABLED="${GOTRUE_PASSWORD_HIBP_ENABLED:-false}"
 export GOTRUE_PASSWORD_MIN_LENGTH="${GOTRUE_PASSWORD_MIN_LENGTH:-6}"
 export GOTRUE_PASSWORD_REQUIRED_CHARACTERS="${GOTRUE_PASSWORD_REQUIRED_CHARACTERS:-}"
@@ -86,7 +86,7 @@ echo "→ auth.env updated for $PROJECT_REF"
 # Hot-reload the auth container (recreate picks up new env_file)
 docker compose \
   -f "$PROJECT_DIR/docker-compose.yml" \
-  --project-name "msd-${PROJECT_REF}" \
+  --project-name "spn-${PROJECT_REF}" \
   up -d --force-recreate --no-deps auth 2>&1
 
 echo "✓ GoTrue reloaded for project $PROJECT_REF"

@@ -62,7 +62,7 @@ const OrganizationsPage: NextPageWithLayout = () => {
     <>
       <Head>
         <title>{pageTitle}</title>
-        <meta name="description" content="mysuperdatabase" />
+        <meta name="description" content="supanow" />
       </Head>
       <ScaffoldContainer>
         <ScaffoldSection isFullWidth className="flex flex-col gap-y-4">

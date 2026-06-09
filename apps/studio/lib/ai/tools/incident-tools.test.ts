@@ -25,21 +25,21 @@ describe('ai/tools/incident-tools', () => {
 
   describe('getIncidentTools', () => {
     it('should return an object with get_active_incidents tool', () => {
-      const tools = getIncidentTools({ baseUrl: 'https://mysuperdatabase.com/dashboard' })
+      const tools = getIncidentTools({ baseUrl: 'https://supanow.com/dashboard' })
 
       expect(tools).toBeDefined()
       expect(tools.get_active_incidents).toBeDefined()
     })
 
     it('should have correct description for get_active_incidents', () => {
-      const tools = getIncidentTools({ baseUrl: 'https://mysuperdatabase.com/dashboard' })
+      const tools = getIncidentTools({ baseUrl: 'https://supanow.com/dashboard' })
 
       expect(tools.get_active_incidents.description).toContain('Check for active incidents')
       expect(tools.get_active_incidents.description).toContain('Supabase service')
     })
 
     it('should have empty input schema', () => {
-      const tools = getIncidentTools({ baseUrl: 'https://mysuperdatabase.com/dashboard' })
+      const tools = getIncidentTools({ baseUrl: 'https://supanow.com/dashboard' })
       const schema = tools.get_active_incidents.inputSchema
 
       // The schema is a Zod object that accepts empty object
@@ -52,12 +52,12 @@ describe('ai/tools/incident-tools', () => {
         const common = await import('common')
         vi.spyOn(common, 'IS_PLATFORM', 'get').mockReturnValue(false)
 
-        const tools = getIncidentTools({ baseUrl: 'https://mysuperdatabase.com/dashboard' })
+        const tools = getIncidentTools({ baseUrl: 'https://supanow.com/dashboard' })
         const result = await (tools.get_active_incidents.execute as any)({})
 
         expect(result).toEqual({
           incidents: [],
-          message: 'Incident checking is only available on mysuperdatabase platform.',
+          message: 'Incident checking is only available on supanow platform.',
         })
         expect(mockFetch).not.toHaveBeenCalled()
       })
@@ -92,7 +92,7 @@ describe('ai/tools/incident-tools', () => {
           json: async () => [],
         })
 
-        const tools = getIncidentTools({ baseUrl: 'https://mysuperdatabase.com/dashboard' })
+        const tools = getIncidentTools({ baseUrl: 'https://supanow.com/dashboard' })
         const result = await (tools.get_active_incidents.execute as any)({})
 
         expect(result).toEqual({
@@ -120,7 +120,7 @@ describe('ai/tools/incident-tools', () => {
           json: async () => mockIncidents,
         })
 
-        const tools = getIncidentTools({ baseUrl: 'https://mysuperdatabase.com/dashboard' })
+        const tools = getIncidentTools({ baseUrl: 'https://supanow.com/dashboard' })
         const result = await (tools.get_active_incidents.execute as any)({})
 
         expect((result as any).incidents).toEqual([
@@ -159,7 +159,7 @@ describe('ai/tools/incident-tools', () => {
           json: async () => mockIncidents,
         })
 
-        const tools = getIncidentTools({ baseUrl: 'https://mysuperdatabase.com/dashboard' })
+        const tools = getIncidentTools({ baseUrl: 'https://supanow.com/dashboard' })
         const result = await (tools.get_active_incidents.execute as any)({})
 
         expect((result as any).incidents).toHaveLength(2)
@@ -172,7 +172,7 @@ describe('ai/tools/incident-tools', () => {
 
         mockFetch.mockRejectedValue(new Error('Network error'))
 
-        const tools = getIncidentTools({ baseUrl: 'https://mysuperdatabase.com/dashboard' })
+        const tools = getIncidentTools({ baseUrl: 'https://supanow.com/dashboard' })
         const result = await (tools.get_active_incidents.execute as any)({})
 
         expect(result).toEqual({
@@ -190,7 +190,7 @@ describe('ai/tools/incident-tools', () => {
           status: 500,
         })
 
-        const tools = getIncidentTools({ baseUrl: 'https://mysuperdatabase.com/dashboard' })
+        const tools = getIncidentTools({ baseUrl: 'https://supanow.com/dashboard' })
         const result = await (tools.get_active_incidents.execute as any)({})
 
         expect(result).toEqual({
@@ -208,7 +208,7 @@ describe('ai/tools/incident-tools', () => {
           json: async () => [],
         })
 
-        const tools = getIncidentTools({ baseUrl: 'https://mysuperdatabase.com/dashboard' })
+        const tools = getIncidentTools({ baseUrl: 'https://supanow.com/dashboard' })
         if (!tools.get_active_incidents.execute) throw new Error('execute is undefined')
         await tools.get_active_incidents.execute({}, { toolCallId: 'test', messages: [] })
 

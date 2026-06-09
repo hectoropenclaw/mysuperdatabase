@@ -21,7 +21,7 @@ const handleGetAll = async (_req: NextApiRequest, res: NextApiResponse) => {
   // Platform specific endpoint
   const response = {
     id: 1,
-    primary_email: 'user@mysuperdatabase.com',
+    primary_email: 'user@supanow.com',
     username: 'johndoe',
     first_name: 'John',
     last_name: 'Doe',

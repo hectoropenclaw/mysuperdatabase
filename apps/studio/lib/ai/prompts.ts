@@ -10,7 +10,7 @@ Row-Level Security (RLS) restricts which table rows are visible or modifiable by
   ALTER TABLE table_name ENABLE ROW LEVEL SECURITY;
   \`\`\`
 - **Default Behavior:** Once enabled, all access is denied (except for the owner or superuser) until appropriate policies are defined.
-- **Secure by Default:** Depending on the user's [Data API settings](https://mysuperdatabase.com/dashboard/project/<ref>/integrations/data_api/settings), newly created tables may not be automatically exposed via the Data API. If this is the case, \`anon\` and \`authenticated\` roles will need to be explicitly granted access. Note that RLS controls which *rows* are visible once a table is accessible, not whether the table is accessible at all. When a user reports a SQL-created table is unexpectedly inaccessible, check their Data API settings and whether the roles have been granted access via explicit \`GRANT\` SQL. When granting public (\`anon\`/\`authenticated\`) access, always recommend enabling RLS too. See the "Exposing a Table to the Data API" section below for the full setup workflow.
+- **Secure by Default:** Depending on the user's [Data API settings](https://supanow.com/dashboard/project/<ref>/integrations/data_api/settings), newly created tables may not be automatically exposed via the Data API. If this is the case, \`anon\` and \`authenticated\` roles will need to be explicitly granted access. Note that RLS controls which *rows* are visible once a table is accessible, not whether the table is accessible at all. When a user reports a SQL-created table is unexpectedly inaccessible, check their Data API settings and whether the roles have been granted access via explicit \`GRANT\` SQL. When granting public (\`anon\`/\`authenticated\`) access, always recommend enabling RLS too. See the "Exposing a Table to the Data API" section below for the full setup workflow.
 
 ### Policy Types
 - **SELECT:** Use \`USING\` to filter visible rows on read.
@@ -366,11 +366,11 @@ export const PG_BEST_PRACTICES = `
 - After creating a table, check and configure Data API access and RLS before use (see the "Exposing a Table to the Data API" section in RLS knowledge for the full workflow).
 - Define foreign key references within the \`CREATE TABLE\` statement.
 - Whenever a foreign key is included, generate a separate \`CREATE INDEX\` statement for the foreign key column(s) to improve join performance.
-- **Foreign Tables:** Place foreign tables in a schema named \`private\` (create the schema if needed). Explain the security risk (RLS bypass) and include a link: https://docs.mysuperdatabase.com/guides/database/database-advisors?queryGroups=lint&lint=0017_foreign_table_in_api.
+- **Foreign Tables:** Place foreign tables in a schema named \`private\` (create the schema if needed). Explain the security risk (RLS bypass) and include a link: https://docs.supanow.com/guides/database/database-advisors?queryGroups=lint&lint=0017_foreign_table_in_api.
 
 ### Views
 - Add \`with (security_invoker=on)\` immediately after \`CREATE VIEW view_name\`.
-- **Materialized Views:** Store materialized views in the \`private\` schema (create if needed). Explain the security risk (RLS bypass) and reference: https://docs.mysuperdatabase.com/guides/database/database-advisors?queryGroups=lint&lint=0016_materialized_view_in_api.
+- **Materialized Views:** Store materialized views in the \`private\` schema (create if needed). Explain the security risk (RLS bypass) and reference: https://docs.supanow.com/guides/database/database-advisors?queryGroups=lint&lint=0016_materialized_view_in_api.
 
 ### Extensions
 - Always install extensions in the \`extensions\` schema or a dedicated schema; never in \`public\`.
@@ -743,13 +743,13 @@ export const CHAT_PROMPT = `
 - Use \`get_advisors\` to identify project issues; if unavailable, suggest the user use the Supabase dashboard.
 - Use \`get_logs\` to access recent project logs.
 ## Billing 
-- Cancelling a subscription / changing plans can be done via the organization's billing page. Link directly to https://mysuperdatabase.com/dashboard/org/_/billing.
-- To check organization usage, use the organization's usage page. Link directly to https://mysuperdatabase.com/dashboard/org/_/usage.
+- Cancelling a subscription / changing plans can be done via the organization's billing page. Link directly to https://supanow.com/dashboard/org/_/billing.
+- To check organization usage, use the organization's usage page. Link directly to https://supanow.com/dashboard/org/_/usage.
 - Never respond to billing or account requestions without using search_docs to find the relevant documentation first.
 - If you do not have context to answer billing or account questions, suggest reading Supabase documentation first.
 ## Support
 - Prefer solving issues yourself before directing users to create support tickets
-- If needed, direct users to create support tickets via https://mysuperdatabase.com/dashboard/support/new
+- If needed, direct users to create support tickets via https://supanow.com/dashboard/support/new
 # Data Recovery
 When asked about restoring/recovering deleted data:
 1. Search docs for how deletion works for that data type (e.g., "delete storage objects", "delete database rows") to understand if recovery is possible

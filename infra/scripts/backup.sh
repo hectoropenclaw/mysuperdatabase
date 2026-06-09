@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# mysuperdatabase — backup.sh
+# supanow — backup.sh
 # Dumps Postgres for each active project and uploads to MinIO.
 # Retention: 7 days for Free, 30 days for Pro/Team (controlled by BACKUP_RETENTION_DAYS env).
 #
@@ -19,7 +19,7 @@ MINIO_ENDPOINT="${MINIO_ENDPOINT:-http://localhost:9000}"
 MINIO_ROOT_USER="${MINIO_ROOT_USER:-minioadmin}"
 MINIO_ROOT_PASSWORD="${MINIO_ROOT_PASSWORD:-minioadmin}"
 BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-7}"
-BACKUP_BUCKET="${BACKUP_BUCKET:-msd-backups}"
+BACKUP_BUCKET="${BACKUP_BUCKET:-spn-backups}"
 
 mc alias set backup-root "$MINIO_ENDPOINT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" --quiet 2>/dev/null || true
 mc mb "backup-root/${BACKUP_BUCKET}" --quiet 2>/dev/null || true
@@ -44,7 +44,7 @@ backup_project() {
   echo "→ Backing up $ref..."
 
   # pg_dump via Docker exec into the project DB container
-  local container="msd-${ref}-db-1"
+  local container="spn-${ref}-db-1"
   if ! docker inspect "$container" --format "{{.State.Running}}" 2>/dev/null | grep -q true; then
     echo "  [WARN] DB container $container not running — skipping"
     return

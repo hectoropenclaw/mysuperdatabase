@@ -63,7 +63,7 @@ Re-running push will skip already-applied files.`,
 		// For now, use the service_role key with REST API's rpc endpoint for DDL.
 		// Full psql approach requires direct DB port (not exposed publicly by default).
 		dbURL := strings.Replace(keys.URL, "https://", "postgresql://postgres:", 1)
-		dbURL = strings.Replace(dbURL, ".mysuperdatabase.co", ".mysuperdatabase.co:5432/postgres", 1)
+		dbURL = strings.Replace(dbURL, ".supanow.co", ".supanow.co:5432/postgres", 1)
 
 		fmt.Printf("Applying %d migration(s) to %s...\n", len(sqlFiles), lc.ProjectRef)
 		for _, f := range sqlFiles {

@@ -126,7 +126,7 @@ export type IntegrationDefinition = {
 
 const authorSupabase = {
   name: 'Supabase',
-  websiteUrl: 'https://mysuperdatabase.com',
+  websiteUrl: 'https://supanow.com',
 }
 
 const SUPABASE_INTEGRATIONS: Array<IntegrationDefinition> = [

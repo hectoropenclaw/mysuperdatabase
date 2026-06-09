@@ -136,7 +136,7 @@ const OrganizationLayoutContent = ({
       {pageTitle && (
         <Head>
           <title>{pageTitle}</title>
-          <meta name="description" content="mysuperdatabase" />
+          <meta name="description" content="supanow" />
         </Head>
       )}
       {selectedOrganization && bannerConfig && !isBannerDismissed && (

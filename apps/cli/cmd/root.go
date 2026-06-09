@@ -4,21 +4,21 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/hectoropenclaw/mysuperdatabase/cli/internal/api"
-	"github.com/hectoropenclaw/mysuperdatabase/cli/internal/config"
+	"github.com/hectoropenclaw/supanow/cli/internal/api"
+	"github.com/hectoropenclaw/supanow/cli/internal/config"
 	"github.com/spf13/cobra"
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "mysuperdatabase",
-	Short: "mysuperdatabase CLI — manage your projects from the terminal",
-	Long: `mysuperdatabase is a CLI for managing your mysuperdatabase projects.
+	Use:   "supanow",
+	Short: "supanow CLI — manage your projects from the terminal",
+	Long: `supanow is a CLI for managing your supanow projects.
 
-  mysuperdatabase login
-  mysuperdatabase projects list
-  mysuperdatabase link --project-ref <ref>
-  mysuperdatabase functions deploy <slug> --file index.ts
-  mysuperdatabase secrets set MY_KEY=myvalue
+  supanow login
+  supanow projects list
+  supanow link --project-ref <ref>
+  supanow functions deploy <slug> --file index.ts
+  supanow secrets set MY_KEY=myvalue
 `,
 	SilenceErrors: true,
 	SilenceUsage:  true,
@@ -47,7 +47,7 @@ func mustLoadAPIClient() *api.Client {
 		os.Exit(1)
 	}
 	if cfg.APIToken == "" {
-		fmt.Fprintln(os.Stderr, "Not logged in. Run: mysuperdatabase login")
+		fmt.Fprintln(os.Stderr, "Not logged in. Run: supanow login")
 		os.Exit(1)
 	}
 	return api.New(cfg.APIURL, cfg.APIToken)

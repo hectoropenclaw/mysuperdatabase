@@ -4,7 +4,7 @@ import { InlineLink } from '@/components/ui/InlineLink'
 
 const BANNER_DESCRIPTION = (
   <>
-    Follow the <InlineLink href="https://status.mysuperdatabase.com">status page</InlineLink> for updates
+    Follow the <InlineLink href="https://status.supanow.com">status page</InlineLink> for updates
   </>
 )
 

@@ -121,7 +121,7 @@ const Wizard: NextPageWithLayout = () => {
 
   const isNotOnHigherPlan = !['team', 'enterprise', 'platform'].includes(currentOrg?.plan.id ?? '')
 
-  // This is to make the database.new redirect work correctly. The database.new redirect should be set to mysuperdatabase.com/dashboard/new/last-visited-org
+  // This is to make the database.new redirect work correctly. The database.new redirect should be set to supanow.com/dashboard/new/last-visited-org
   if (slug === 'last-visited-org') {
     if (lastVisitedOrganization) {
       router.replace(`/new/${lastVisitedOrganization}`, undefined, { shallow: true })
@@ -502,7 +502,7 @@ const Wizard: NextPageWithLayout = () => {
       {/* Wizard layouts set the visual header but not the browser tab title. */}
       <Head>
         <title>{pageTitle}</title>
-        <meta name="description" content="mysuperdatabase" />
+        <meta name="description" content="supanow" />
       </Head>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmitWithComputeCostsConfirmation)}>
@@ -550,7 +550,7 @@ const Wizard: NextPageWithLayout = () => {
                                 Ideal for agent-first workflows: update your schema in code, push it
                                 to GitHub, and Supabase deploys the changes automatically.{' '}
                                 <a
-                                  href="https://docs.mysuperdatabase.com/guides/deployment/branching/github-integration"
+                                  href="https://docs.supanow.com/guides/deployment/branching/github-integration"
                                   target="_blank"
                                   rel="noreferrer noopener"
                                   className="text-link"

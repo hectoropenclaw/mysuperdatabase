@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/hectoropenclaw/mysuperdatabase/cli/cmd"
+	"github.com/hectoropenclaw/supanow/cli/cmd"
 )
 
 func main() {

@@ -184,9 +184,9 @@ function CustomApp({ Component, pageProps }: AppPropsWithLayout) {
                   <TimezoneProvider>
                     <TimestampInfoTimezoneBridge>
                       <Head>
-                        <title>{appTitle ?? 'mysuperdatabase'}</title>
+                        <title>{appTitle ?? 'supanow'}</title>
                         <meta name="viewport" content="initial-scale=1.0, width=device-width" />
-                        <meta property="og:image" content={`${BASE_PATH}/img/mysuperdatabase-logo.png`} />
+                        <meta property="og:image" content={`${BASE_PATH}/img/supanow-logo.png`} />
                         <meta name="googlebot" content="notranslate" />
                         {/* [Alaister]: This has to be an inline style tag here and not a separate component due to next/font */}
                         <style
@@ -205,7 +205,7 @@ function CustomApp({ Component, pageProps }: AppPropsWithLayout) {
                       </Head>
                       <MetaFaviconsPagesRouter
                         includeManifest
-                        applicationName="mysuperdatabase"
+                        applicationName="supanow"
                         route={isNonProdEnv ? '/favicon/staging' : '/favicon'}
                       />
                       <TooltipProvider>

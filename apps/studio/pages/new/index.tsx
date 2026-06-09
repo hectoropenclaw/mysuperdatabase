@@ -86,7 +86,7 @@ const Wizard: NextPageWithLayout = () => {
       {/* Wizard layouts set the visual header but not the browser tab title. */}
       <Head>
         <title>{pageTitle}</title>
-        <meta name="description" content="mysuperdatabase" />
+        <meta name="description" content="supanow" />
       </Head>
       <HCaptcha
         ref={captchaRefCallback}

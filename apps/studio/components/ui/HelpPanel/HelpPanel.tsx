@@ -94,7 +94,7 @@ export const HelpPanel = ({
                   style={{ background: '#404EED' }}
                 >
                   <a
-                    href="https://discord.mysuperdatabase.com"
+                    href="https://discord.supanow.com"
                     target="_blank"
                     rel="noreferrer"
                     className="group dark block cursor-pointer"

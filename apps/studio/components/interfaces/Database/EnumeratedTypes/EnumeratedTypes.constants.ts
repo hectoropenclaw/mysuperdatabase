@@ -1,6 +1,6 @@
 // [Joshen] Just FYI I do think that we should merge this with whats in SidePanelEditor.constants.ts
 // Such that dashboard can work with _all_ native Postgres data types as listed here
-// https://docs.mysuperdatabase.com/guides/database/tables#data-types
+// https://docs.supanow.com/guides/database/tables#data-types
 // But for now, just make sure users cannot created enum types that share the same name as a native type
 
 import {

@@ -107,7 +107,7 @@ export const BackupItem = ({ index, isHealthy, backup, onSelectBackup }: BackupI
             {backup.isPhysicalBackup
               ? 'File-level backups of your entire database.'
               : 'SQL-based backups of your entire database.'}{' '}
-            <InlineLink href="https://mysuperdatabase.com/blog/postgresql-physical-logical-backups">
+            <InlineLink href="https://supanow.com/blog/postgresql-physical-logical-backups">
               Learn more
             </InlineLink>
           </TooltipContent>

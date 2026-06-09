@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# mysuperdatabase — sync-secrets.sh
+# supanow — sync-secrets.sh
 # Writes project secrets to the edge-runtime container as a .env file,
 # then restarts edge-runtime to pick up new values.
 #
@@ -26,7 +26,7 @@ echo "→ secrets.env updated for $PROJECT_REF"
 # Hot-reload edge-runtime (picks up new env_file on recreate)
 docker compose \
   -f "$PROJECT_DIR/docker-compose.yml" \
-  --project-name "msd-${PROJECT_REF}" \
+  --project-name "spn-${PROJECT_REF}" \
   up -d --force-recreate --no-deps edge-runtime 2>&1
 
 echo "✓ Edge-runtime reloaded with new secrets for $PROJECT_REF"

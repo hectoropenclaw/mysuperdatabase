@@ -117,7 +117,7 @@ const SignInLayout = ({
           <nav className="relative flex items-center justify-between sm:h-10">
             <div className="flex items-center grow shrink-0 lg:grow-0">
               <div className="flex items-center justify-between w-full md:w-auto">
-                <Link href={logoLinkToMarketingSite ? 'https://mysuperdatabase.com' : '/organizations'}>
+                <Link href={logoLinkToMarketingSite ? 'https://supanow.com' : '/organizations'}>
                   <img
                     src={
                       resolvedTheme?.includes('dark')
@@ -153,14 +153,14 @@ const SignInLayout = ({
                 <p className="text-xs text-foreground-lighter sm:mx-auto sm:max-w-sm">
                   By continuing, you agree to Supabase’s{' '}
                   <Link
-                    href="https://mysuperdatabase.com/terms"
+                    href="https://supanow.com/terms"
                     className="underline hover:text-foreground-light"
                   >
                     Terms of Service
                   </Link>{' '}
                   and{' '}
                   <Link
-                    href="https://mysuperdatabase.com/privacy"
+                    href="https://supanow.com/privacy"
                     className="underline hover:text-foreground-light"
                   >
                     Privacy Policy
@@ -187,7 +187,7 @@ const SignInLayout = ({
                   className="flex items-center gap-4"
                 >
                   <img
-                    src={`https://mysuperdatabase.com${quote.img_url}`}
+                    src={`https://supanow.com${quote.img_url}`}
                     alt={quote.handle}
                     className="w-12 h-12 rounded-full"
                   />

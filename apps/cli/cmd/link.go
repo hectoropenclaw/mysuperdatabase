@@ -3,13 +3,13 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/hectoropenclaw/mysuperdatabase/cli/internal/config"
+	"github.com/hectoropenclaw/supanow/cli/internal/config"
 	"github.com/spf13/cobra"
 )
 
 var linkCmd = &cobra.Command{
 	Use:   "link",
-	Short: "Link current directory to a mysuperdatabase project",
+	Short: "Link current directory to a supanow project",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ref, _ := cmd.Flags().GetString("project-ref")
 		if ref == "" {
@@ -60,7 +60,7 @@ var statusCmd = &cobra.Command{
 }
 
 func init() {
-	linkCmd.Flags().StringP("project-ref", "p", "", "Project reference (from: mysuperdatabase projects list)")
+	linkCmd.Flags().StringP("project-ref", "p", "", "Project reference (from: supanow projects list)")
 	_ = linkCmd.MarkFlagRequired("project-ref")
 }
 

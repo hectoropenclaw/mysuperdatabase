@@ -1,5 +1,5 @@
 {
-  "name": "mysuperdatabase",
+  "name": "supanow",
   "short_name": "mydb",
   "description": "Your open Postgres platform.",
   "display_override": ["minimal-ui"],

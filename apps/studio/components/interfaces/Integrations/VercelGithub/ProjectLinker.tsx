@@ -196,7 +196,7 @@ const ProjectLinker = ({
           <div className="flex justify-center gap-0 w-full relative">
             <Panel>
               <div className="bg-white shadow-sm border rounded-sm p-1 w-12 h-12 flex justify-center items-center">
-                <img src={`${BASE_PATH}/img/supabase-logo.svg`} alt="mysuperdatabase" className="w-6" />
+                <img src={`${BASE_PATH}/img/supabase-logo.svg`} alt="supanow" className="w-6" />
               </div>
 
               <OrganizationProjectSelector
@@ -216,7 +216,7 @@ const ProjectLinker = ({
                         <div className="bg-white shadow-sm border rounded-sm p-1 w-6 h-6 flex justify-center items-center">
                           <img
                             src={`${BASE_PATH}/img/supabase-logo.svg`}
-                            alt="mysuperdatabase"
+                            alt="supanow"
                             className="w-4"
                           />
                         </div>
@@ -248,7 +248,7 @@ const ProjectLinker = ({
                         <div className="bg-white shadow-sm border rounded-sm p-1 w-6 h-6 flex justify-center items-center">
                           <img
                             src={`${BASE_PATH}/img/supabase-logo.svg`}
-                            alt="mysuperdatabase"
+                            alt="supanow"
                             className="w-4"
                           />
                         </div>

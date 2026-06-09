@@ -1,22 +1,32 @@
-name: msd-control-plane
+name: spn-control-plane
 
 services:
   db:
     image: postgres:17-alpine
+    container_name: spn-cp-db
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${CP_DB_PASSWORD:-changeme}
-      POSTGRES_DB: mysuperdatabase_cp
+      POSTGRES_PASSWORD: ${CP_DB_PASSWORD:?CP_DB_PASSWORD is required}
+      POSTGRES_DB: supanow_cp
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - cp-db-data:/var/lib/postgresql/data
+      - ./init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: pg_isready -U postgres
+      test: pg_isready -U postgres -d supanow_cp
       interval: 5s
-      retries: 5
+      timeout: 5s
+      retries: 10
+    networks:
+      - coolify
 
 volumes:
   cp-db-data:
-    name: msd-cp-db
+    name: spn-cp-db
+
+networks:
+  coolify:
+    external: true
+    name: coolify

@@ -59,7 +59,7 @@ export const AuthProvidersForm = () => {
                       hour.
                     </p>
                     <Button asChild type="default" className="w-min" icon={<ExternalLink />}>
-                      <Link href="https://docs.mysuperdatabase.com/guides/platform/going-into-prod#security">
+                      <Link href="https://docs.supanow.com/guides/platform/going-into-prod#security">
                         View security recommendations
                       </Link>
                     </Button>

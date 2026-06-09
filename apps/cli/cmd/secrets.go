@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/hectoropenclaw/mysuperdatabase/cli/internal/api"
+	"github.com/hectoropenclaw/supanow/cli/internal/api"
 	"github.com/spf13/cobra"
 )
 
@@ -20,8 +20,8 @@ var secretsSetCmd = &cobra.Command{
 	Short: "Set one or more secrets",
 	Long: `Set secrets as KEY=VALUE pairs.
 
-  mysuperdatabase secrets set MY_API_KEY=abc123 OTHER_KEY=xyz
-  mysuperdatabase secrets set --env-file .env.production`,
+  supanow secrets set MY_API_KEY=abc123 OTHER_KEY=xyz
+  supanow secrets set --env-file .env.production`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		client := mustLoadAPIClient()
 		ref, err := resolveRefFlag(cmd)

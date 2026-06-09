@@ -8,9 +8,9 @@ import (
 )
 
 const (
-	DefaultAPIURL = "https://api.mysuperdatabase.com"
+	DefaultAPIURL = "https://api.supanow.com"
 	configFile    = "config.json"
-	linkFile      = ".mysuperdatabase"
+	linkFile      = ".supanow"
 )
 
 type Config struct {
@@ -28,7 +28,7 @@ func configDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".mysuperdatabase"), nil
+	return filepath.Join(home, ".supanow"), nil
 }
 
 func Load() (*Config, error) {
@@ -72,7 +72,7 @@ func LoadLink() (*LinkConfig, error) {
 	data, err := os.ReadFile(linkFile)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("not linked to a project — run: mysuperdatabase link --project-ref <ref>")
+			return nil, fmt.Errorf("not linked to a project — run: supanow link --project-ref <ref>")
 		}
 		return nil, err
 	}

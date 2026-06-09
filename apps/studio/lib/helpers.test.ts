@@ -97,7 +97,7 @@ describe('getURL', () => {
   it('should return prod url by default', () => {
     const result = getURL()
 
-    expect(result).toEqual('https://mysuperdatabase.com/dashboard')
+    expect(result).toEqual('https://supanow.com/dashboard')
   })
 })
 
@@ -301,7 +301,7 @@ describe('pluralize', () => {
 
 describe('isValidHttpUrl', () => {
   it('should return true if the URL is valid', () => {
-    const result = isValidHttpUrl('https://mysuperdatabase.com')
+    const result = isValidHttpUrl('https://supanow.com')
 
     expect(result).toBe(true)
   })
@@ -320,8 +320,8 @@ describe('extractUrls', () => {
   })
 
   it('should extract basic https URLs', () => {
-    const result = extractUrls('Check out https://mysuperdatabase.com')
-    expect(result).toEqual(['https://mysuperdatabase.com'])
+    const result = extractUrls('Check out https://supanow.com')
+    expect(result).toEqual(['https://supanow.com'])
   })
 
   it('should extract URLs with ports', () => {
@@ -350,8 +350,8 @@ describe('extractUrls', () => {
   })
 
   it('should extract multiple URLs from text', () => {
-    const result = extractUrls('Visit http://example.com and https://mysuperdatabase.com for more info')
-    expect(result).toEqual(['http://example.com', 'https://mysuperdatabase.com'])
+    const result = extractUrls('Visit http://example.com and https://supanow.com for more info')
+    expect(result).toEqual(['http://example.com', 'https://supanow.com'])
   })
 
   it('should remove trailing punctuation from URLs', () => {
@@ -370,8 +370,8 @@ describe('extractUrls', () => {
   })
 
   it('should handle URLs with trailing commas and periods', () => {
-    const result = extractUrls('Visit https://example.com, and https://mysuperdatabase.com.')
-    expect(result).toEqual(['https://example.com', 'https://mysuperdatabase.com'])
+    const result = extractUrls('Visit https://example.com, and https://supanow.com.')
+    expect(result).toEqual(['https://example.com', 'https://supanow.com'])
   })
 
   it('should handle URLs with subpath and markdown bolding', () => {

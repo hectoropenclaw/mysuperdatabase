@@ -1,4 +1,4 @@
-module github.com/hectoropenclaw/mysuperdatabase/cli
+module github.com/hectoropenclaw/supanow/cli
 
 go 1.22
 

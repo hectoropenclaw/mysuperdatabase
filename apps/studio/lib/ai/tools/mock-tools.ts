@@ -81,7 +81,7 @@ const MOCK_ADVISORIES_DATA = [
     category: 'security',
     message: 'Materialized views in API schema can bypass RLS. Move them to private schema.',
     remediationUrl:
-      'https://docs.mysuperdatabase.com/guides/database/database-advisors?queryGroups=lint&lint=0016_materialized_view_in_api',
+      'https://docs.supanow.com/guides/database/database-advisors?queryGroups=lint&lint=0016_materialized_view_in_api',
   },
   {
     id: '0031_functions_no_rls_guard',
@@ -89,7 +89,7 @@ const MOCK_ADVISORIES_DATA = [
     category: 'security',
     message: 'Function api.health_check should verify auth context before querying tables.',
     remediationUrl:
-      'https://docs.mysuperdatabase.com/guides/database/database-advisors?queryGroups=lint&lint=0031_functions_no_rls_guard',
+      'https://docs.supanow.com/guides/database/database-advisors?queryGroups=lint&lint=0031_functions_no_rls_guard',
   },
   {
     id: '1012_slow_query',
@@ -97,7 +97,7 @@ const MOCK_ADVISORIES_DATA = [
     category: 'performance',
     message:
       'Query on table edge_function_logs exceeded 3s average execution time over the last hour.',
-    remediationUrl: 'https://docs.mysuperdatabase.com/guides/platform/performance-advisors#slow-queries',
+    remediationUrl: 'https://docs.supanow.com/guides/platform/performance-advisors#slow-queries',
   },
 ]
 

@@ -6,23 +6,23 @@ import (
 	"os"
 	"strings"
 
-	"github.com/hectoropenclaw/mysuperdatabase/cli/internal/config"
+	"github.com/hectoropenclaw/supanow/cli/internal/config"
 	"github.com/spf13/cobra"
 )
 
 var loginCmd = &cobra.Command{
 	Use:   "login",
-	Short: "Authenticate with mysuperdatabase",
+	Short: "Authenticate with supanow",
 	Long: `Log in by providing your API token.
 
-Generate a token at: https://app.mysuperdatabase.com/account/tokens`,
+Generate a token at: https://app.supanow.com/account/tokens`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		tokenFlag, _ := cmd.Flags().GetString("token")
 		apiURL, _ := cmd.Flags().GetString("api-url")
 
 		token := tokenFlag
 		if token == "" {
-			fmt.Print("Enter your API token (from https://app.mysuperdatabase.com/account/tokens): ")
+			fmt.Print("Enter your API token (from https://app.supanow.com/account/tokens): ")
 			reader := bufio.NewReader(os.Stdin)
 			t, err := reader.ReadString('\n')
 			if err != nil {

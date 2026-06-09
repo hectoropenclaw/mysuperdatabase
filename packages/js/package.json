@@ -1,7 +1,7 @@
 {
-  "name": "@mysuperdatabase/js",
+  "name": "@supanow/js",
   "version": "0.1.0",
-  "description": "The mysuperdatabase client library for JavaScript/TypeScript",
+  "description": "The supanow client library for JavaScript/TypeScript",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -30,7 +30,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/hectoropenclaw/mysuperdatabase.git",
+    "url": "git+https://github.com/hectoropenclaw/supanow.git",
     "directory": "packages/js"
   },
   "keywords": ["supabase", "postgres", "database", "realtime", "storage", "functions"]

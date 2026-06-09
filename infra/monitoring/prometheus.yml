@@ -2,22 +2,22 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
   external_labels:
-    cluster: mysuperdatabase
+    cluster: supanow
 
 scrape_configs:
   # Host metrics
   - job_name: node
     static_configs:
-      - targets: ['msd-node-exporter:9100']
+      - targets: ['spn-node-exporter:9100']
 
   # Container metrics
   - job_name: cadvisor
     static_configs:
-      - targets: ['msd-cadvisor:8080']
+      - targets: ['spn-cadvisor:8080']
     metric_relabel_configs:
-      # Keep only msd-* containers
+      # Keep only spn-* containers
       - source_labels: [container_label_com_docker_compose_project]
-        regex: msd-.*
+        regex: spn-.*
         action: keep
 
   # Kong (per-project) — auto-discovered via file SD

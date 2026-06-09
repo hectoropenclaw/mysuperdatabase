@@ -32,7 +32,7 @@ export function SubmitButton({
       </Button>
       <p className={cn('text-xs text-foreground-lighter text-balance pr-4', descriptionClassName)}>
         We will contact you at <span className="text-foreground font-medium">{userEmail}</span>.
-        Please ensure emails from mysuperdatabase.com are allowed.
+        Please ensure emails from supanow.com are allowed.
       </p>
     </div>
   )

@@ -76,7 +76,7 @@ const PolicySelection = ({
             </Button>
             <Button asChild type="default" icon={<ExternalLink strokeWidth={1.5} />}>
               <a
-                href="https://mysuperdatabase.com/blog/studio-introducing-assistant#introducing-the-supabase-assistant"
+                href="https://supanow.com/blog/studio-introducing-assistant#introducing-the-supabase-assistant"
                 target="_blank"
                 rel="noreferrer"
               >

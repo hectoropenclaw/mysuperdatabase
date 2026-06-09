@@ -33,7 +33,7 @@ export {
 export type { Database, Tables, TablesInsert, TablesUpdate, Enums } from './types'
 
 /**
- * Creates a mysuperdatabase client.
+ * Creates a supanow client.
  *
  * @param projectRef  - Your project reference (e.g. "abc123xyz")
  * @param anonKey     - Your project's anon key
@@ -41,7 +41,7 @@ export type { Database, Tables, TablesInsert, TablesUpdate, Enums } from './type
  *
  * @example
  * ```ts
- * import { createMysuperdatabaseClient } from '@mysuperdatabase/js'
+ * import { createMysuperdatabaseClient } from '@supanow/js'
  *
  * const db = createMysuperdatabaseClient('my-project-ref', 'my-anon-key')
  * const { data, error } = await db.from('users').select('*')
@@ -56,6 +56,6 @@ export function createMysuperdatabaseClient<
   options?: Parameters<typeof import('@supabase/supabase-js').createClient>[2]
 ) {
   const { createClient } = require('@supabase/supabase-js')
-  const url = `https://${projectRef}.mysuperdatabase.co`
+  const url = `https://${projectRef}.supanow.co`
   return createClient<Database, SchemaName>(url, anonKey, options)
 }

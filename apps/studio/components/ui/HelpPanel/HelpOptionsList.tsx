@@ -13,8 +13,8 @@ import { ResourceList } from '@/components/ui/Resource/ResourceList'
 import { takeBreadcrumbSnapshot } from '@/lib/breadcrumbs'
 import { DOCS_URL } from '@/lib/constants'
 
-const DISCORD_URL = 'https://discord.mysuperdatabase.com'
-const STATUS_URL = 'https://status.mysuperdatabase.com'
+const DISCORD_URL = 'https://discord.supanow.com'
+const STATUS_URL = 'https://status.supanow.com'
 
 type HelpOptionsListProps = {
   excludeIds?: HelpOptionId[]

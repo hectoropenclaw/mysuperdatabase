@@ -42,7 +42,7 @@ export const IntegrationOverviewTabV2 = ({ children }: PropsWithChildren) => {
 
   const { type, content, docsUrl, siteUrl, files = [] } = integration
 
-  const docsUrlLabel = docsUrl?.includes('docs.mysuperdatabase.com')
+  const docsUrlLabel = docsUrl?.includes('docs.supanow.com')
     ? 'Supabase Docs'
     : isGithubHost(docsUrl)
       ? 'GitHub Docs'

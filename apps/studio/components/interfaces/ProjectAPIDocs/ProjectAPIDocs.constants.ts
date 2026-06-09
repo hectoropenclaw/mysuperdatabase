@@ -219,9 +219,9 @@ curl -X POST '${endpoint}/auth/v1/verify' \\
     category: API_DOCS_CATEGORIES.USER_MANAGEMENT,
     title: `Log in with Third Party OAuth`,
     description: `
-Users can log in with Third Party OAuth like Google, Facebook, GitHub, and more. You must first enable each of these in the Auth Providers settings [here](https://mysuperdatabase.com).
+Users can log in with Third Party OAuth like Google, Facebook, GitHub, and more. You must first enable each of these in the Auth Providers settings [here](https://supanow.com).
 
-View all the available [Third Party OAuth providers](https://mysuperdatabase.com).
+View all the available [Third Party OAuth providers](https://supanow.com).
 
 After they have logged in, all interactions using the Supabase JS client will be performed as "that user".
 
@@ -1201,7 +1201,7 @@ A simple convenience function to get the URL for an asset in a public bucket. If
 
 This function does not verify if the bucket is public. If a public URL is created for a bucket which is not public, you will not be able to download the asset.
 
-The bucket needs to be set to public, either via \`updateBucket()\` or by going to Storage on mysuperdatabase.com/dashboard, clicking the overflow menu on a bucket and choosing "Make public"
+The bucket needs to be set to public, either via \`updateBucket()\` or by going to Storage on supanow.com/dashboard, clicking the overflow menu on a bucket and choosing "Make public"
 
 RLS policy permissions required:
 - \`buckets\` table permissions: none

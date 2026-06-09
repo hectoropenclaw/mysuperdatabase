@@ -208,7 +208,7 @@ export const PlanExpectationInfoContent = ({
             </Link>
           </Button>
           <Button asChild type="default" size="tiny" icon={<ExternalLink />}>
-            <Link href="https://mysuperdatabase.com/contact/enterprise" target="_blank" rel="noreferrer">
+            <Link href="https://supanow.com/contact/enterprise" target="_blank" rel="noreferrer">
               Enquire about Enterprise
             </Link>
           </Button>

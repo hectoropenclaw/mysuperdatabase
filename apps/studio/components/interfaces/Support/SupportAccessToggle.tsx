@@ -70,7 +70,7 @@ export function SupportAccessToggle({ form, align = 'left', className }: Support
                       We are committed to maintaining strict data privacy and security standards in
                       all support activities.{' '}
                       <Link
-                        href="https://mysuperdatabase.com/privacy"
+                        href="https://supanow.com/privacy"
                         target="_blank"
                         rel="noreferrer"
                         className="text-foreground-light underline hover:text-foreground transition"

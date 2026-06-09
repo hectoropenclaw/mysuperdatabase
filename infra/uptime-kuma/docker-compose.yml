@@ -1,18 +1,18 @@
-# mysuperdatabase — Status page (Uptime Kuma)
-# Accessible at: https://status.mysuperdatabase.com
+# supanow — Status page (Uptime Kuma)
+# Accessible at: https://status.supanow.com
 #
-# Deploy: cd ~/mysuperdatabase/infra/uptime-kuma && docker compose up -d
+# Deploy: cd ~/supanow/infra/uptime-kuma && docker compose up -d
 
 services:
   uptime-kuma:
     image: louislam/uptime-kuma:1.23.15
-    container_name: msd-uptime-kuma
+    container_name: spn-uptime-kuma
     restart: unless-stopped
     volumes:
       - uptime-kuma-data:/app/data
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.msd-status.rule=Host(`status.mysuperdatabase.com`)"
+      - "traefik.http.routers.msd-status.rule=Host(`status.supanow.com`)"
       - "traefik.http.routers.msd-status.entrypoints=websecure"
       - "traefik.http.routers.msd-status.tls=true"
       - "traefik.http.routers.msd-status.tls.certresolver=cloudflare"
@@ -22,7 +22,7 @@ services:
 
 volumes:
   uptime-kuma-data:
-    name: msd-uptime-kuma-data
+    name: spn-uptime-kuma-data
 
 networks:
   coolify:

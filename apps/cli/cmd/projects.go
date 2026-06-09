@@ -5,7 +5,7 @@ import (
 	"os"
 	"text/tabwriter"
 
-	"github.com/hectoropenclaw/mysuperdatabase/cli/internal/api"
+	"github.com/hectoropenclaw/supanow/cli/internal/api"
 	"github.com/spf13/cobra"
 )
 
@@ -26,7 +26,7 @@ var projectsListCmd = &cobra.Command{
 		}
 
 		if len(projects) == 0 {
-			fmt.Println("No projects found. Create one with: mysuperdatabase projects create")
+			fmt.Println("No projects found. Create one with: supanow projects create")
 			return nil
 		}
 
@@ -76,7 +76,7 @@ var projectsCreateCmd = &cobra.Command{
 		fmt.Printf("  ref:    %s\n", project.Ref)
 		fmt.Printf("  name:   %s\n", project.Name)
 		fmt.Printf("  status: %s (provisioning takes ~30s)\n", project.Status)
-		fmt.Printf("\nLink this directory: mysuperdatabase link --project-ref %s\n", project.Ref)
+		fmt.Printf("\nLink this directory: supanow link --project-ref %s\n", project.Ref)
 		return nil
 	},
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# mysuperdatabase — provision.sh
+# supanow — provision.sh
 # Provisions a new project stack on this server.
 #
 # Usage:
@@ -58,7 +58,7 @@ ANON_KEY=$(make_jwt "anon" "$JWT_SECRET")
 SERVICE_KEY=$(make_jwt "service_role" "$JWT_SECRET")
 REALTIME_SECRET_KEY_BASE=$(openssl rand -hex 64)
 
-SITE_URL="https://${PROJECT_REF}.mysuperdatabase.co"
+SITE_URL="https://${PROJECT_REF}.supanow.co"
 
 echo "→ Provisioning project: $PROJECT_REF"
 echo "  site_url:     $SITE_URL"
@@ -67,12 +67,12 @@ echo "  service_key:  ${SERVICE_KEY:0:20}..."
 
 # ─── Generate Kong config ────────────────────────────────────────────────────
 export PROJECT_REF JWT_SECRET ANON_KEY SERVICE_KEY DB_PASSWORD SITE_URL REALTIME_SECRET_KEY_BASE
-export SMTP_HOST="${SMTP_HOST:-smtp.mysuperdatabase.com}"
+export SMTP_HOST="${SMTP_HOST:-smtp.supanow.com}"
 export SMTP_PORT="${SMTP_PORT:-587}"
 export SMTP_USER="${SMTP_USER:-}"
 export SMTP_PASS="${SMTP_PASS:-}"
-export SMTP_ADMIN_EMAIL="${SMTP_ADMIN_EMAIL:-noreply@mysuperdatabase.com}"
-export SMTP_SENDER_NAME="${SMTP_SENDER_NAME:-mysuperdatabase}"
+export SMTP_ADMIN_EMAIL="${SMTP_ADMIN_EMAIL:-noreply@supanow.com}"
+export SMTP_SENDER_NAME="${SMTP_SENDER_NAME:-supanow}"
 export MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-minioadmin}"
 export MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-minioadmin}"
 
@@ -117,7 +117,7 @@ export GOTRUE_SECURITY_REFRESH_TOKEN_ROTATION_ENABLED="${GOTRUE_SECURITY_REFRESH
 export GOTRUE_SECURITY_REFRESH_TOKEN_REUSE_INTERVAL="${GOTRUE_SECURITY_REFRESH_TOKEN_REUSE_INTERVAL:-10}"
 export GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_REAUTHENTICATION="${GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_REAUTHENTICATION:-false}"
 export GOTRUE_MFA_TOTP_ENROLLMENT_MAX_FREQUENCY="${GOTRUE_MFA_TOTP_ENROLLMENT_MAX_FREQUENCY:-0}"
-export GOTRUE_MFA_TOTP_ISSUER="${GOTRUE_MFA_TOTP_ISSUER:-mysuperdatabase}"
+export GOTRUE_MFA_TOTP_ISSUER="${GOTRUE_MFA_TOTP_ISSUER:-supanow}"
 export GOTRUE_PASSWORD_HIBP_ENABLED="${GOTRUE_PASSWORD_HIBP_ENABLED:-false}"
 export GOTRUE_PASSWORD_MIN_LENGTH="${GOTRUE_PASSWORD_MIN_LENGTH:-6}"
 export GOTRUE_PASSWORD_REQUIRED_CHARACTERS="${GOTRUE_PASSWORD_REQUIRED_CHARACTERS:-}"
@@ -148,14 +148,14 @@ S3_ACCESS_KEY="msd$(openssl rand -hex 9)"       # 20 chars
 S3_SECRET_KEY="$(openssl rand -hex 20)"          # 40 chars
 
 if command -v mc &>/dev/null; then
-  mc alias set msd-root "$MINIO_ENDPOINT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" --quiet 2>/dev/null || true
+  mc alias set spn-root "$MINIO_ENDPOINT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" --quiet 2>/dev/null || true
 
   # Create bucket
-  mc mb "msd-root/msd-${PROJECT_REF}" --quiet 2>/dev/null \
-    || echo "  bucket msd-${PROJECT_REF} may already exist"
+  mc mb "spn-root/spn-${PROJECT_REF}" --quiet 2>/dev/null \
+    || echo "  bucket spn-${PROJECT_REF} may already exist"
 
   # Create per-project MinIO user
-  mc admin user add msd-root "$S3_ACCESS_KEY" "$S3_SECRET_KEY" --quiet 2>/dev/null || true
+  mc admin user add spn-root "$S3_ACCESS_KEY" "$S3_SECRET_KEY" --quiet 2>/dev/null || true
 
   # Create a policy granting full access only to this project's bucket
   POLICY_JSON=$(cat <<POLICY
@@ -165,19 +165,19 @@ if command -v mc &>/dev/null; then
     "Effect": "Allow",
     "Action": ["s3:*"],
     "Resource": [
-      "arn:aws:s3:::msd-${PROJECT_REF}",
-      "arn:aws:s3:::msd-${PROJECT_REF}/*"
+      "arn:aws:s3:::spn-${PROJECT_REF}",
+      "arn:aws:s3:::spn-${PROJECT_REF}/*"
     ]
   }]
 }
 POLICY
 )
-  echo "$POLICY_JSON" | mc admin policy create msd-root "policy-${PROJECT_REF}" /dev/stdin --quiet 2>/dev/null || true
-  mc admin policy attach msd-root "policy-${PROJECT_REF}" --user "$S3_ACCESS_KEY" --quiet 2>/dev/null || true
+  echo "$POLICY_JSON" | mc admin policy create spn-root "policy-${PROJECT_REF}" /dev/stdin --quiet 2>/dev/null || true
+  mc admin policy attach spn-root "policy-${PROJECT_REF}" --user "$S3_ACCESS_KEY" --quiet 2>/dev/null || true
 
-  echo "→ MinIO: bucket msd-${PROJECT_REF} + user ${S3_ACCESS_KEY} ready"
+  echo "→ MinIO: bucket spn-${PROJECT_REF} + user ${S3_ACCESS_KEY} ready"
 else
-  echo "  [WARN] mc not found — create bucket msd-${PROJECT_REF} manually"
+  echo "  [WARN] mc not found — create bucket spn-${PROJECT_REF} manually"
   S3_ACCESS_KEY="$MINIO_ACCESS_KEY"
   S3_SECRET_KEY="$MINIO_SECRET_KEY"
 fi
@@ -189,13 +189,13 @@ export MINIO_SECRET_KEY="$S3_SECRET_KEY"
 # ─── Start DB only first, set passwords, then start everything ───────────────
 echo "→ Starting DB for $PROJECT_REF..."
 docker compose -f "$PROJECTS_DIR/$PROJECT_REF/docker-compose.yml" \
-  --project-name "msd-${PROJECT_REF}" \
+  --project-name "spn-${PROJECT_REF}" \
   up -d db 2>&1
 
 # Wait for DB to be healthy
 echo "→ Waiting for DB to be ready..."
 until docker compose -f "$PROJECTS_DIR/$PROJECT_REF/docker-compose.yml" \
-  --project-name "msd-${PROJECT_REF}" \
+  --project-name "spn-${PROJECT_REF}" \
   exec -T db pg_isready -U postgres -h 127.0.0.1 > /dev/null 2>&1; do
   sleep 2
 done
@@ -203,7 +203,7 @@ done
 # Run init SQL: set passwords, fix ownership, create _realtime schema, set JWT settings
 echo "→ Running DB init SQL..."
 docker compose -f "$PROJECTS_DIR/$PROJECT_REF/docker-compose.yml" \
-  --project-name "msd-${PROJECT_REF}" \
+  --project-name "spn-${PROJECT_REF}" \
   exec -T db psql -U supabase_admin -h 127.0.0.1 \
   -f /docker-entrypoint-initdb.d/init-scripts/99-roles.sql 2>&1
 
@@ -213,7 +213,7 @@ echo "→ secrets.env created (empty) at $PROJECTS_DIR/$PROJECT_REF/secrets.env"
 
 # Seed default edge function (main entrypoint) into the functions volume
 echo "→ Seeding default edge function..."
-FUNCTIONS_VOLUME="msd-${PROJECT_REF}-functions"
+FUNCTIONS_VOLUME="spn-${PROJECT_REF}-functions"
 docker run --rm \
   -v "${FUNCTIONS_VOLUME}:/home/deno/functions" \
   -v "${TEMPLATES_DIR}/functions:/templates:ro" \
@@ -222,7 +222,7 @@ docker run --rm \
 # Start remaining services
 echo "→ Starting all services for $PROJECT_REF..."
 docker compose -f "$PROJECTS_DIR/$PROJECT_REF/docker-compose.yml" \
-  --project-name "msd-${PROJECT_REF}" \
+  --project-name "spn-${PROJECT_REF}" \
   up -d 2>&1
 
 echo ""

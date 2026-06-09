@@ -1,6 +1,6 @@
 // Re-export generic database helpers.
 // Users can augment `Database` by generating types with:
-//   mysuperdatabase gen types typescript --project-ref <ref> > types/database.ts
+//   supanow gen types typescript --project-ref <ref> > types/database.ts
 // then importing: import type { Database } from './types/database'
 
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[]

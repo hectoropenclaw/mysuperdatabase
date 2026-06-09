@@ -271,7 +271,7 @@ app.get('/projects/:ref/settings', async (c) => {
   return c.json({
     project: projectToStudioShape(p),
     app: { id: p.ref, name: p.name },
-    db: { host: `db.${p.ref}.mysuperdatabase.co`, version: '15', port: 5432 },
+    db: { host: `db.${p.ref}.supanow.co`, version: '15', port: 5432 },
   })
 })
 
@@ -282,7 +282,7 @@ app.get('/feature-flags', (c) => {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // AUTH ENDPOINTS — proxied to per-project GoTrue admin API
-// GoTrue admin is exposed via Kong at https://{ref}.mysuperdatabase.co/auth/v1/admin/*
+// GoTrue admin is exposed via Kong at https://{ref}.supanow.co/auth/v1/admin/*
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // Helper: get project's service_role_key and endpoint for GoTrue admin proxying
@@ -338,12 +338,12 @@ app.get('/auth/:ref/config', async (c) => {
     MAILER_SECURE_EMAIL_CHANGE_ENABLED: stored.MAILER_SECURE_EMAIL_CHANGE_ENABLED ?? true,
     MAILER_OTP_EXP: stored.MAILER_OTP_EXP ?? 86400,
     JWT_EXP: stored.JWT_EXP ?? 3600,
-    SMTP_ADMIN_EMAIL: stored.SMTP_ADMIN_EMAIL ?? 'noreply@mysuperdatabase.com',
+    SMTP_ADMIN_EMAIL: stored.SMTP_ADMIN_EMAIL ?? 'noreply@supanow.com',
     SMTP_HOST: stored.SMTP_HOST ?? '',
     SMTP_PORT: stored.SMTP_PORT ?? 587,
     SMTP_USER: stored.SMTP_USER ?? '',
     SMTP_PASS: stored.SMTP_PASS ?? '',
-    SMTP_SENDER_NAME: stored.SMTP_SENDER_NAME ?? 'mysuperdatabase',
+    SMTP_SENDER_NAME: stored.SMTP_SENDER_NAME ?? 'supanow',
     SMTP_MAX_FREQUENCY: stored.SMTP_MAX_FREQUENCY ?? 1,
     SMS_AUTOCONFIRM: stored.SMS_AUTOCONFIRM ?? false,
     SMS_PROVIDER: stored.SMS_PROVIDER ?? 'twilio',
@@ -359,7 +359,7 @@ app.get('/auth/:ref/config', async (c) => {
     SECURITY_REFRESH_TOKEN_REUSE_INTERVAL: stored.SECURITY_REFRESH_TOKEN_REUSE_INTERVAL ?? 10,
     SECURITY_UPDATE_PASSWORD_REQUIRE_REAUTHENTICATION: stored.SECURITY_UPDATE_PASSWORD_REQUIRE_REAUTHENTICATION ?? false,
     MFA_TOTP_ENROLLMENT_MAX_FREQUENCY: stored.MFA_TOTP_ENROLLMENT_MAX_FREQUENCY ?? 0,
-    MFA_TOTP_ISSUER: stored.MFA_TOTP_ISSUER ?? 'mysuperdatabase',
+    MFA_TOTP_ISSUER: stored.MFA_TOTP_ISSUER ?? 'supanow',
     PASSWORD_HIBP_ENABLED: stored.PASSWORD_HIBP_ENABLED ?? false,
     PASSWORD_MIN_LENGTH: stored.PASSWORD_MIN_LENGTH ?? 6,
     PASSWORD_REQUIRED_CHARACTERS: stored.PASSWORD_REQUIRED_CHARACTERS ?? '',
@@ -429,8 +429,8 @@ app.patch('/auth/:ref/config', async (c) => {
     GOTRUE_SMTP_PORT: String(merged.SMTP_PORT ?? 587),
     GOTRUE_SMTP_USER: merged.SMTP_USER ?? '',
     GOTRUE_SMTP_PASS: merged.SMTP_PASS ?? '',
-    GOTRUE_SMTP_ADMIN_EMAIL: merged.SMTP_ADMIN_EMAIL ?? 'noreply@mysuperdatabase.com',
-    GOTRUE_SMTP_SENDER_NAME: merged.SMTP_SENDER_NAME ?? 'mysuperdatabase',
+    GOTRUE_SMTP_ADMIN_EMAIL: merged.SMTP_ADMIN_EMAIL ?? 'noreply@supanow.com',
+    GOTRUE_SMTP_SENDER_NAME: merged.SMTP_SENDER_NAME ?? 'supanow',
     GOTRUE_SMTP_MAX_FREQUENCY: `${merged.SMTP_MAX_FREQUENCY ?? 1}s`,
     GOTRUE_DISABLE_SIGNUP: String(merged.DISABLE_SIGNUP ?? false),
     GOTRUE_MAILER_AUTOCONFIRM: String(merged.MAILER_AUTOCONFIRM ?? false),
@@ -453,7 +453,7 @@ app.patch('/auth/:ref/config', async (c) => {
     GOTRUE_SECURITY_REFRESH_TOKEN_REUSE_INTERVAL: String(merged.SECURITY_REFRESH_TOKEN_REUSE_INTERVAL ?? 10),
     GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_REAUTHENTICATION: String(merged.SECURITY_UPDATE_PASSWORD_REQUIRE_REAUTHENTICATION ?? false),
     GOTRUE_MFA_TOTP_ENROLLMENT_MAX_FREQUENCY: String(merged.MFA_TOTP_ENROLLMENT_MAX_FREQUENCY ?? 0),
-    GOTRUE_MFA_TOTP_ISSUER: merged.MFA_TOTP_ISSUER ?? 'mysuperdatabase',
+    GOTRUE_MFA_TOTP_ISSUER: merged.MFA_TOTP_ISSUER ?? 'supanow',
     GOTRUE_PASSWORD_HIBP_ENABLED: String(merged.PASSWORD_HIBP_ENABLED ?? false),
     GOTRUE_PASSWORD_MIN_LENGTH: String(merged.PASSWORD_MIN_LENGTH ?? 6),
     GOTRUE_PASSWORD_REQUIRED_CHARACTERS: merged.PASSWORD_REQUIRED_CHARACTERS ?? '',
@@ -686,7 +686,7 @@ const pgMetaProxy = async (c: any) => {
     apikey: creds.service_role_key,
     Authorization: `Bearer ${creds.service_role_key}`,
     'Content-Type': 'application/json',
-    'x-pg-application-name': 'mysuperdatabase-studio',
+    'x-pg-application-name': 'supanow-studio',
   }
 
   const method = c.req.method
@@ -829,9 +829,9 @@ app.get('/projects/:ref/connection-string', async (c) => {
   if (!rows.length) return c.json({ message: 'Not found' }, 404)
   const { db_password, site_url } = rows[0]
   return c.json({
-    uri: `postgresql://postgres:${db_password}@db.${ref}.mysuperdatabase.co:5432/postgres`,
+    uri: `postgresql://postgres:${db_password}@db.${ref}.supanow.co:5432/postgres`,
     pooler_uri: null,
-    host: `db.${ref}.mysuperdatabase.co`,
+    host: `db.${ref}.supanow.co`,
     port: 5432,
     database: 'postgres',
     user: 'postgres',
@@ -1064,7 +1064,7 @@ function generateRef(): string {
 }
 
 function projectToStudioShape(p: any) {
-  const siteUrl = p.site_url ?? `https://${p.ref}.mysuperdatabase.co`
+  const siteUrl = p.site_url ?? `https://${p.ref}.supanow.co`
   const isActive = p.status === 'active'
   return {
     id: p.id,
@@ -1081,9 +1081,9 @@ function projectToStudioShape(p: any) {
     endpoint: siteUrl,
     // connectionString signals to Studio that pg-meta is ready — must be truthy when active
     connectionString: isActive
-      ? `postgresql://postgres:${p.db_password ?? 'placeholder'}@db.${p.ref}.mysuperdatabase.co:5432/postgres`
+      ? `postgresql://postgres:${p.db_password ?? 'placeholder'}@db.${p.ref}.supanow.co:5432/postgres`
       : null,
-    db_host: `db.${p.ref}.mysuperdatabase.co`,
+    db_host: `db.${p.ref}.supanow.co`,
     dbVersion: '150001',
     high_availability: false,
     integration_source: null,

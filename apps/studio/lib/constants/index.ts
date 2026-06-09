@@ -62,14 +62,14 @@ export const STRIPE_PUBLIC_KEY =
 export const POSTHOG_URL =
   process.env.NEXT_PUBLIC_ENVIRONMENT === 'staging' ||
   process.env.NEXT_PUBLIC_ENVIRONMENT === 'local'
-    ? 'https://ph.mysuperdatabase.com'
-    : 'https://ph.mysuperdatabase.com'
+    ? 'https://ph.supanow.com'
+    : 'https://ph.supanow.com'
 
 export const USAGE_APPROACHING_THRESHOLD = 0.75
 
-export const DOCS_URL = process.env.NEXT_PUBLIC_DOCS_URL || 'https://docs.mysuperdatabase.com'
+export const DOCS_URL = process.env.NEXT_PUBLIC_DOCS_URL || 'https://docs.supanow.com'
 
-export const APP_NAME = 'mysuperdatabase'
+export const APP_NAME = 'supanow'
 export const APP_TAGLINE = 'Your open Postgres platform'
 
 export const OPT_IN_TAGS = {

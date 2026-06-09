@@ -420,7 +420,7 @@ export const NewOrgForm = ({
                       description={
                         <>
                           Which plan fits your organization's needs best?{' '}
-                          <InlineLink href="https://mysuperdatabase.com/pricing">Learn more</InlineLink>.
+                          <InlineLink href="https://supanow.com/pricing">Learn more</InlineLink>.
                         </>
                       }
                     >

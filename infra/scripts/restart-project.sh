@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# mysuperdatabase — restart-project.sh
+# supanow — restart-project.sh
 # Restarts one or all services in a project stack.
 #
 # Usage:
@@ -25,10 +25,10 @@ fi
 
 if [[ ${#SERVICES[@]} -eq 0 ]]; then
   echo "→ Restarting all services for $PROJECT_REF..."
-  docker compose -f "$COMPOSE_FILE" --project-name "msd-${PROJECT_REF}" restart
+  docker compose -f "$COMPOSE_FILE" --project-name "spn-${PROJECT_REF}" restart
 else
   echo "→ Restarting services [${SERVICES[*]}] for $PROJECT_REF..."
-  docker compose -f "$COMPOSE_FILE" --project-name "msd-${PROJECT_REF}" restart "${SERVICES[@]}"
+  docker compose -f "$COMPOSE_FILE" --project-name "spn-${PROJECT_REF}" restart "${SERVICES[@]}"
 fi
 
 echo "✓ Restart complete for $PROJECT_REF"

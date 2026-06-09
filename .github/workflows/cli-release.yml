@@ -34,9 +34,9 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            apps/cli/dist/mysuperdatabase-linux-amd64
-            apps/cli/dist/mysuperdatabase-linux-arm64
-            apps/cli/dist/mysuperdatabase-darwin-amd64
-            apps/cli/dist/mysuperdatabase-darwin-arm64
-            apps/cli/dist/mysuperdatabase-windows-amd64.exe
+            apps/cli/dist/supanow-linux-amd64
+            apps/cli/dist/supanow-linux-arm64
+            apps/cli/dist/supanow-darwin-amd64
+            apps/cli/dist/supanow-darwin-arm64
+            apps/cli/dist/supanow-windows-amd64.exe
           generate_release_notes: true

@@ -254,7 +254,7 @@ export const ProjectLayout = forwardRef<HTMLDivElement, PropsWithChildren<Projec
       <>
         <Head>
           <title>{pageTitle}</title>
-          <meta name="description" content="mysuperdatabase" />
+          <meta name="description" content="supanow" />
         </Head>
         <div className="flex flex-row h-full w-full">
           <ResizablePanelGroup orientation="horizontal">

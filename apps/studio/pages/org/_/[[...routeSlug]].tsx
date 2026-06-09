@@ -37,7 +37,7 @@ const GenericOrganizationPage: NextPage = () => {
     <>
       <Head>
         <title>{pageTitle}</title>
-        <meta name="description" content="mysuperdatabase" />
+        <meta name="description" content="supanow" />
       </Head>
       <Header />
       <PageLayout className="grow min-h-0" title="Select an organization to continue">

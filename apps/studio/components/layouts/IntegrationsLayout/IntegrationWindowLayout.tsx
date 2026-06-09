@@ -39,7 +39,7 @@ const IntegrationWindowLayout = ({
           </Link>
         )}
         <Link
-          href={'https://mysuperdatabase.com/support'}
+          href={'https://supanow.com/support'}
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-2 text-xs text-light hover:text"
@@ -70,7 +70,7 @@ const Header = ({ title, integrationIcon }: HeaderProps) => {
         <div className="flex items-center gap-6 w-full">
           <div className="flex gap-2 items-center">
             <div className="bg-white shadow-sm border rounded-sm p-1 w-8 h-8 flex justify-center items-center">
-              <img src={`${BASE_PATH}/img/supabase-logo.svg`} alt="mysuperdatabase" className="w-4" />
+              <img src={`${BASE_PATH}/img/supabase-logo.svg`} alt="supanow" className="w-4" />
             </div>
             <X className="text-border-stronger" strokeWidth={2} size={16} />
             {integrationIcon}
