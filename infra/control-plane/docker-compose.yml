@@ -22,6 +22,40 @@ services:
     networks:
       - coolify
 
+  api:
+    build:
+      context: ../../apps/api
+      dockerfile: Dockerfile
+    container_name: spn-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:${CP_DB_PASSWORD}@spn-cp-db:5432/supanow_cp
+      AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET is required}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-https://supabase-api.hconsulting.app}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://supabase-api.hconsulting.app}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      INFRA_SCRIPTS_PATH: /scripts
+      NODE_ENV: production
+    volumes:
+      # Give API access to Docker socket for provisioning per-project stacks
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ../../infra/scripts:/scripts:ro
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.spn-api.rule=Host(`supabase-api.hconsulting.app`)"
+      - "traefik.http.routers.spn-api.entrypoints=websecure"
+      - "traefik.http.routers.spn-api.tls=true"
+      - "traefik.http.routers.spn-api.tls.certresolver=cloudflare"
+      - "traefik.http.services.spn-api.loadbalancer.server.port=4000"
+    networks:
+      - coolify
+
 volumes:
   cp-db-data:
     name: spn-cp-db
