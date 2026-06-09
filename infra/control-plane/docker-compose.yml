@@ -24,8 +24,8 @@ services:
 
   api:
     build:
-      context: ../../apps/api
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: apps/api/Dockerfile
     container_name: spn-api
     restart: unless-stopped
     depends_on:
@@ -42,6 +42,8 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       INFRA_SCRIPTS_PATH: /scripts
       NODE_ENV: production
+    ports:
+      - "127.0.0.1:4000:4000"
     volumes:
       # Give API access to Docker socket for provisioning per-project stacks
       - /var/run/docker.sock:/var/run/docker.sock:ro
