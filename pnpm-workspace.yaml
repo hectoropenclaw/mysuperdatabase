@@ -79,5 +79,4 @@ overrides:
   tmp: ^0.2.7
   webpack: ^5.104.1
 
-patchedDependencies:
-  react-data-grid: patches/react-data-grid.patch
+# patchedDependencies removed — patch file not in sparse checkout

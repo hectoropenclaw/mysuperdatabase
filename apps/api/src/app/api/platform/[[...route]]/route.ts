@@ -11,7 +11,9 @@ const SCRIPTS_DIR = path.resolve(process.cwd(), '../../infra/scripts')
 
 export const runtime = 'nodejs'
 
-const app = new Hono().basePath('/api/platform')
+type Env = { Variables: { userId: string; userEmail: string } }
+
+const app = new Hono<Env>().basePath('/api/platform')
 
 // ─── Auth middleware ─────────────────────────────────────────────────────────
 app.use('*', async (c, next) => {

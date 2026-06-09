@@ -7,7 +7,9 @@ import { generateRef, provisionProject, teardownProject } from '@/lib/provision'
 
 export const runtime = 'nodejs'
 
-const app = new Hono().basePath('/api/v1')
+type Env = { Variables: { userId: string } }
+
+const app = new Hono<Env>().basePath('/api/v1')
 
 // ─── Auth middleware ─────────────────────────────────────────────────────────
 app.use('*', async (c, next) => {
