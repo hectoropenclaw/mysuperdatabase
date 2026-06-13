@@ -286,17 +286,21 @@ fi
 ORG_ID="${ORG_ID:-$SYSTEM_ORG_ID}"
 
 if [[ -n "$ORG_ID" ]]; then
+  COMPONENT_VERSIONS_JSON=$(cat <<'JSON'
+{"postgres":"supabase/postgres:15.8.1.085","postgrest":"postgrest/postgrest:v14.12","gotrue":"supabase/gotrue:v2.189.0","realtime":"supabase/realtime:v2.102.3","storage":"supabase/storage-api:v1.60.4","pgMeta":"supabase/postgres-meta:v0.96.6","edgeRuntime":"supabase/edge-runtime:v1.74.0","kong":"kong/kong:3.9.1"}
+JSON
+)
   docker run --rm --network host postgres:17-alpine \
     psql "$CP_DATABASE_URL" -c \
     "INSERT INTO projects
        (ref, name, org_id, status, site_url, db_host, db_port,
         jwt_secret, anon_key, service_role_key, db_password,
-        storage_s3_access_key, storage_s3_secret_key)
+        storage_s3_access_key, storage_s3_secret_key, component_versions)
      VALUES
        ('${PROJECT_REF}', '${PROJECT_REF}', '${ORG_ID}', 'active',
         '${SITE_URL}', 'spn-${PROJECT_REF}-db-1', 5432,
         '${JWT_SECRET}', '${ANON_KEY}', '${SERVICE_KEY}', '${DB_PASSWORD}',
-        '${S3_ACCESS_KEY}', '${S3_SECRET_KEY}')
+        '${S3_ACCESS_KEY}', '${S3_SECRET_KEY}', '${COMPONENT_VERSIONS_JSON}'::jsonb)
      ON CONFLICT (ref) DO UPDATE SET
        status='active',
        jwt_secret=EXCLUDED.jwt_secret,
@@ -305,6 +309,7 @@ if [[ -n "$ORG_ID" ]]; then
        db_password=EXCLUDED.db_password,
        storage_s3_access_key=EXCLUDED.storage_s3_access_key,
        storage_s3_secret_key=EXCLUDED.storage_s3_secret_key,
+       component_versions=EXCLUDED.component_versions,
        updated_at=now();" 2>&1
   echo "→ Project registered in control plane DB"
 else

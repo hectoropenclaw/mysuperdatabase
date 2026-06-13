@@ -16,6 +16,52 @@ type Env = { Variables: { userId: string; userEmail: string } }
 
 const app = new Hono<Env>().basePath('/api/platform')
 const REF_RE = /^[a-z0-9]{6,32}$/
+const COMPONENT_VERSIONS = {
+  postgres: 'supabase/postgres:15.8.1.085',
+  postgrest: 'postgrest/postgrest:v14.12',
+  gotrue: 'supabase/gotrue:v2.189.0',
+  realtime: 'supabase/realtime:v2.102.3',
+  storage: 'supabase/storage-api:v1.60.4',
+  pgMeta: 'supabase/postgres-meta:v0.96.6',
+  edgeRuntime: 'supabase/edge-runtime:v1.74.0',
+  kong: 'kong/kong:3.9.1',
+}
+
+async function auditEvent(
+  projectId: string | null,
+  actorUserId: string | null,
+  eventType: string,
+  metadata: Record<string, unknown> = {},
+  targetType?: string,
+  targetId?: string
+) {
+  await pool.query(
+    `INSERT INTO project_audit_events
+       (project_id, actor_user_id, event_type, target_type, target_id, metadata)
+     VALUES($1, $2, $3, $4, $5, $6)`,
+    [projectId, actorUserId, eventType, targetType ?? null, targetId ?? null, JSON.stringify(metadata)]
+  ).catch((err) => console.error(`[audit] ${eventType}:`, err.message))
+}
+
+async function timedProbe(name: string, url: string, headers: Record<string, string> = {}) {
+  const started = Date.now()
+  try {
+    const res = await fetch(url, { headers, signal: AbortSignal.timeout(4000) })
+    return {
+      service: name,
+      status: res.ok || res.status === 401 ? 'healthy' : 'unhealthy',
+      latency_ms: Date.now() - started,
+      detail: { http_status: res.status },
+    }
+  } catch (err: any) {
+    return {
+      service: name,
+      status: 'unhealthy',
+      latency_ms: Date.now() - started,
+      detail: { error: err.message },
+    }
+  }
+}
 
 // ─── Auth middleware ─────────────────────────────────────────────────────────
 app.use('*', async (c, next) => {
@@ -291,8 +337,9 @@ app.get('/feature-flags', (c) => {
 
 // Helper: get project's service_role_key and endpoint for GoTrue admin proxying
 async function getProjectAuthCreds(ref: string, userId: string) {
+  if (!REF_RE.test(ref)) return null
   const { rows } = await pool.query(
-    `SELECT p.service_role_key, p.site_url, p.auth_config, p.status
+    `SELECT p.id, p.ref, p.service_role_key, p.site_url, p.auth_config, p.status
      FROM projects p
      JOIN org_members om ON om.org_id = p.org_id
      WHERE p.ref=$1 AND om.user_id=$2 AND p.status='active'`,
@@ -426,6 +473,7 @@ app.patch('/auth/:ref/config', async (c) => {
     'UPDATE projects SET auth_config=$1, updated_at=NOW() WHERE ref=$2',
     [JSON.stringify(merged), ref]
   )
+  await auditEvent(creds.id, userId, 'auth.config.updated', { keys: Object.keys(updates) }, 'auth_config', ref)
 
   // Map config keys → GOTRUE env vars for the shell script
   const env: Record<string, string> = {
@@ -528,6 +576,19 @@ app.get('/auth/:ref/users', async (c) => {
   return c.json(data, status as any)
 })
 
+// ─── POST /platform/auth/{ref}/users (admin create user) ─────────────────────
+app.post('/auth/:ref/users', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const creds = await getProjectAuthCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found or project not active' }, 404)
+
+  const body = await c.req.json()
+  const { status, data } = await gotrueFetch(creds.site_url, creds.service_role_key, 'users', 'POST', body)
+  await auditEvent(creds.id, userId, 'auth.user.created', { status, email: body.email }, 'auth_user', data?.id)
+  return c.json(data, status as any)
+})
+
 // ─── GET /platform/auth/{ref}/users/{id} ──────────────────────────────────────
 app.get('/auth/:ref/users/:id', async (c) => {
   const userId = c.get('userId')
@@ -549,6 +610,7 @@ app.delete('/auth/:ref/users/:id', async (c) => {
   const { status, data } = await gotrueFetch(
     creds.site_url, creds.service_role_key, `users/${id}`, 'DELETE'
   )
+  await auditEvent(creds.id, userId, 'auth.user.deleted', { status }, 'auth_user', id)
   return c.json(data, status as any)
 })
 
@@ -563,6 +625,7 @@ app.put('/auth/:ref/users/:id', async (c) => {
   const { status, data } = await gotrueFetch(
     creds.site_url, creds.service_role_key, `users/${id}`, 'PUT', body
   )
+  await auditEvent(creds.id, userId, 'auth.user.updated', { status, keys: Object.keys(body) }, 'auth_user', id)
   return c.json(data, status as any)
 })
 
@@ -576,6 +639,7 @@ app.delete('/auth/:ref/users/:id/factors', async (c) => {
   const { status, data } = await gotrueFetch(
     creds.site_url, creds.service_role_key, `users/${id}/factors`, 'DELETE'
   )
+  await auditEvent(creds.id, userId, 'auth.user.factors.deleted', { status }, 'auth_user', id)
   return c.json(data, status as any)
 })
 
@@ -590,6 +654,7 @@ app.post('/auth/:ref/invite', async (c) => {
   const { status, data } = await gotrueFetch(
     creds.site_url, creds.service_role_key, 'invite', 'POST', body
   )
+  await auditEvent(creds.id, userId, 'auth.invite.sent', { status, email: body.email }, 'auth_invite')
   return c.json(data, status as any)
 })
 
@@ -604,6 +669,7 @@ app.post('/auth/:ref/magiclink', async (c) => {
   const { status, data } = await gotrueFetch(
     creds.site_url, creds.service_role_key, 'magiclink', 'POST', body
   )
+  await auditEvent(creds.id, userId, 'auth.magiclink.sent', { status, email: body.email }, 'auth_magiclink')
   return c.json(data, status as any)
 })
 
@@ -618,6 +684,7 @@ app.post('/auth/:ref/otp', async (c) => {
   const { status, data } = await gotrueFetch(
     creds.site_url, creds.service_role_key, 'otp', 'POST', body
   )
+  await auditEvent(creds.id, userId, 'auth.otp.sent', { status, email: body.email, phone: body.phone }, 'auth_otp')
   return c.json(data, status as any)
 })
 
@@ -632,6 +699,7 @@ app.post('/auth/:ref/recover', async (c) => {
   const { status, data } = await gotrueFetch(
     creds.site_url, creds.service_role_key, 'recover', 'POST', body
   )
+  await auditEvent(creds.id, userId, 'auth.recovery.sent', { status, email: body.email }, 'auth_recovery')
   return c.json(data, status as any)
 })
 
@@ -646,16 +714,82 @@ app.post('/auth/:ref/generate_link', async (c) => {
   const { status, data } = await gotrueFetch(
     creds.site_url, creds.service_role_key, 'generate_link', 'POST', body
   )
+  await auditEvent(creds.id, userId, 'auth.link.generated', { status, type: body.type, email: body.email }, 'auth_link')
   return c.json(data, status as any)
+})
+
+app.get('/auth/:ref/templates', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const creds = await getProjectAuthCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found or project not active' }, 404)
+  const { rows } = await pool.query(
+    `SELECT template, subject, body_html, body_text, redirect_to, updated_at
+     FROM auth_email_templates WHERE project_id=$1 ORDER BY template`,
+    [creds.id]
+  )
+  return c.json(rows)
+})
+
+app.patch('/auth/:ref/templates/:template', async (c) => {
+  const userId = c.get('userId')
+  const { ref, template } = c.req.param()
+  const creds = await getProjectAuthCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found or project not active' }, 404)
+  const body = await c.req.json()
+  const { rows } = await pool.query(
+    `INSERT INTO auth_email_templates
+       (project_id, template, subject, body_html, body_text, redirect_to, created_by)
+     VALUES($1, $2, $3, $4, $5, $6, $7)
+     ON CONFLICT (project_id, template) DO UPDATE SET
+       subject=EXCLUDED.subject,
+       body_html=EXCLUDED.body_html,
+       body_text=EXCLUDED.body_text,
+       redirect_to=EXCLUDED.redirect_to,
+       updated_at=NOW()
+     RETURNING template, subject, body_html, body_text, redirect_to, updated_at`,
+    [
+      creds.id,
+      template,
+      body.subject ?? null,
+      body.body_html ?? null,
+      body.body_text ?? null,
+      body.redirect_to ?? null,
+      userId,
+    ]
+  )
+  await auditEvent(creds.id, userId, 'auth.template.updated', { template }, 'auth_template', template)
+  return c.json(rows[0])
 })
 
 // ─── DELETE /platform/auth/{ref}/templates/{template}/reset ───────────────────
 app.delete('/auth/:ref/templates/:template/reset', async (c) => {
+  const userId = c.get('userId')
+  const { ref, template } = c.req.param()
+  const creds = await getProjectAuthCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found or project not active' }, 404)
+  await pool.query('DELETE FROM auth_email_templates WHERE project_id=$1 AND template=$2', [creds.id, template])
+  await auditEvent(creds.id, userId, 'auth.template.reset', { template }, 'auth_template', template)
   return c.json({ message: 'Template reset to default.' })
 })
 
 // ─── GET /platform/auth/{ref}/validate/spam ───────────────────────────────────
 app.get('/auth/:ref/validate/spam', (c) => c.json({ is_spam: false }))
+
+app.get('/auth/:ref/audit', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const creds = await getProjectAuthCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found or project not active' }, 404)
+  const { rows } = await pool.query(
+    `SELECT id, event_type, target_type, target_id, metadata, created_at
+     FROM project_audit_events
+     WHERE project_id=$1 AND event_type LIKE 'auth.%'
+     ORDER BY created_at DESC LIMIT 100`,
+    [creds.id]
+  )
+  return c.json(rows)
+})
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PG-META PROXY — forward /platform/pg-meta/{ref}/* to project's Kong /pg/* route
@@ -1202,6 +1336,146 @@ app.get('/projects/:ref/status', async (c) => {
   })
 })
 
+app.get('/projects/:ref/services/status', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const authHeaders = { apikey: project.service_role_key, Authorization: `Bearer ${project.service_role_key}` }
+  const services = await Promise.all([
+    timedProbe('postgrest', `${project.site_url}/rest/v1/`, { apikey: project.service_role_key }),
+    timedProbe('auth', `${project.site_url}/auth/v1/health`),
+    timedProbe('storage', `${project.site_url}/storage/v1/status`, authHeaders),
+    timedProbe('realtime', `${project.site_url}/realtime/v1/`, authHeaders),
+    timedProbe('pg-meta', `${project.site_url}/pg/health`, authHeaders),
+    timedProbe('functions', `${project.site_url}/functions/v1/`, authHeaders),
+  ])
+
+  for (const service of services) {
+    await pool.query(
+      `INSERT INTO project_service_health(project_id, service, status, latency_ms, detail)
+       VALUES($1, $2, $3, $4, $5)
+       ON CONFLICT (project_id, service) DO UPDATE SET
+         status=EXCLUDED.status,
+         latency_ms=EXCLUDED.latency_ms,
+         detail=EXCLUDED.detail,
+         checked_at=NOW()`,
+      [project.id, service.service, service.status, service.latency_ms, JSON.stringify(service.detail)]
+    )
+  }
+  return c.json({ services, checked_at: new Date().toISOString() })
+})
+
+app.get('/projects/:ref/components', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const { rows } = await pool.query('SELECT component_versions FROM projects WHERE id=$1', [project.id])
+  return c.json({
+    desired: COMPONENT_VERSIONS,
+    current: { ...COMPONENT_VERSIONS, ...(rows[0]?.component_versions ?? {}) },
+    upgrade_policy: 'manual',
+  })
+})
+
+app.post('/projects/:ref/upgrade-plan', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const body = await c.req.json().catch(() => ({}))
+  const components = Array.isArray(body.components) && body.components.length
+    ? body.components
+    : Object.keys(COMPONENT_VERSIONS)
+  const plan = components.map((component: string) => ({
+    component,
+    action: 'restart-after-image-update',
+    requires_backup: ['postgres', 'storage'].includes(component),
+    expected_downtime: component === 'postgres' ? 'short' : 'rolling',
+  }))
+  await auditEvent(project.id, userId, 'project.upgrade_plan.generated', { components }, 'project', ref)
+  return c.json({ project_ref: ref, plan })
+})
+
+app.get('/projects/:ref/quotas', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const { rows } = await pool.query('SELECT quotas FROM projects WHERE id=$1', [project.id])
+  return c.json(rows[0]?.quotas ?? {})
+})
+
+app.patch('/projects/:ref/quotas', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const updates = await c.req.json()
+  const { rows } = await pool.query(
+    `UPDATE projects SET quotas=quotas || $2::jsonb, updated_at=NOW()
+     WHERE id=$1 RETURNING quotas`,
+    [project.id, JSON.stringify(updates)]
+  )
+  await auditEvent(project.id, userId, 'project.quotas.updated', { keys: Object.keys(updates) }, 'project', ref)
+  return c.json(rows[0].quotas)
+})
+
+app.get('/projects/:ref/usage', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const { rows } = await pool.query(
+    `SELECT metric_date, db_size_mb, api_requests, auth_mau, storage_mb, created_at
+     FROM usage_metrics WHERE project_id=$1 ORDER BY metric_date DESC LIMIT 30`,
+    [project.id]
+  )
+  return c.json(rows)
+})
+
+app.post('/projects/:ref/usage/collect', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const sql = `
+    select
+      pg_database_size(current_database()) / 1024.0 / 1024.0 as db_size_mb,
+      coalesce((select count(*) from auth.users where created_at > now() - interval '30 days'), 0) as auth_mau,
+      coalesce((select sum(metadata->>'size')::numeric / 1024.0 / 1024.0 from storage.objects), 0) as storage_mb`
+  const data = await fetchPgMetaQuery(project.site_url, project.service_role_key, sql)
+  const metrics = data?.[0] ?? {}
+  const { rows } = await pool.query(
+    `INSERT INTO usage_metrics(project_id, metric_date, db_size_mb, auth_mau, storage_mb)
+     VALUES($1, CURRENT_DATE, $2, $3, $4)
+     ON CONFLICT (project_id, metric_date) DO UPDATE SET
+       db_size_mb=EXCLUDED.db_size_mb,
+       auth_mau=EXCLUDED.auth_mau,
+       storage_mb=EXCLUDED.storage_mb,
+       created_at=NOW()
+     RETURNING metric_date, db_size_mb, api_requests, auth_mau, storage_mb, created_at`,
+    [project.id, metrics.db_size_mb ?? 0, metrics.auth_mau ?? 0, metrics.storage_mb ?? 0]
+  )
+  await auditEvent(project.id, userId, 'project.usage.collected', rows[0], 'project', ref)
+  return c.json(rows[0])
+})
+
+app.get('/projects/:ref/audit', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const { rows } = await pool.query(
+    `SELECT id, event_type, target_type, target_id, metadata, created_at
+     FROM project_audit_events
+     WHERE project_id=$1 ORDER BY created_at DESC LIMIT 200`,
+    [project.id]
+  )
+  return c.json(rows)
+})
+
 // ─── GET /platform/projects/:ref/connection-string ────────────────────────────
 app.get('/projects/:ref/connection-string', async (c) => {
   const userId = c.get('userId')
@@ -1254,8 +1528,10 @@ app.post('/projects/:ref/transfer', (c) =>
 // ═══════════════════════════════════════════════════════════════════════════════
 
 async function getProjectStorageCreds(ref: string, userId: string) {
+  if (!REF_RE.test(ref)) return null
   const { rows } = await pool.query(
-    `SELECT p.service_role_key, p.site_url, p.storage_s3_access_key, p.storage_s3_secret_key, p.status
+    `SELECT p.id, p.ref, p.quotas, p.service_role_key, p.site_url,
+            p.storage_s3_access_key, p.storage_s3_secret_key, p.status
      FROM projects p JOIN org_members om ON om.org_id=p.org_id
      WHERE p.ref=$1 AND om.user_id=$2 AND p.status='active'`,
     [ref, userId]
@@ -1293,6 +1569,15 @@ async function bodyText(c: any): Promise<string | null> {
   try { return await c.req.text() } catch { return null }
 }
 
+function safeJson(text: string | null) {
+  if (!text) return null
+  try { return JSON.parse(text) } catch { return { raw: text.slice(0, 500) } }
+}
+
+function sqlLiteral(value: string) {
+  return `'${value.replace(/'/g, "''")}'`
+}
+
 // ─── Buckets ──────────────────────────────────────────────────────────────────
 app.get('/storage/:ref/buckets', async (c) => {
   const userId = c.get('userId')
@@ -1308,7 +1593,9 @@ app.post('/storage/:ref/buckets', async (c) => {
   const creds = await getProjectStorageCreds(ref, userId)
   if (!creds) return c.json({ message: 'Not found' }, 404)
   const body = await bodyText(c)
-  return storageProxy(creds.site_url, creds.service_role_key, 'bucket', 'POST', body)
+  const response = await storageProxy(creds.site_url, creds.service_role_key, 'bucket', 'POST', body)
+  await auditEvent(creds.id, userId, 'storage.bucket.created', { body: safeJson(body) }, 'storage_bucket')
+  return response
 })
 
 app.get('/storage/:ref/buckets/:id', async (c) => {
@@ -1325,7 +1612,9 @@ app.patch('/storage/:ref/buckets/:id', async (c) => {
   const creds = await getProjectStorageCreds(ref, userId)
   if (!creds) return c.json({ message: 'Not found' }, 404)
   const body = await bodyText(c)
-  return storageProxy(creds.site_url, creds.service_role_key, `bucket/${id}`, 'PUT', body)
+  const response = await storageProxy(creds.site_url, creds.service_role_key, `bucket/${id}`, 'PUT', body)
+  await auditEvent(creds.id, userId, 'storage.bucket.updated', { bucket_id: id, body: safeJson(body) }, 'storage_bucket', id)
+  return response
 })
 
 app.delete('/storage/:ref/buckets/:id', async (c) => {
@@ -1333,7 +1622,9 @@ app.delete('/storage/:ref/buckets/:id', async (c) => {
   const { ref, id } = c.req.param()
   const creds = await getProjectStorageCreds(ref, userId)
   if (!creds) return c.json({ message: 'Not found' }, 404)
-  return storageProxy(creds.site_url, creds.service_role_key, `bucket/${id}`, 'DELETE')
+  const response = await storageProxy(creds.site_url, creds.service_role_key, `bucket/${id}`, 'DELETE')
+  await auditEvent(creds.id, userId, 'storage.bucket.deleted', { bucket_id: id }, 'storage_bucket', id)
+  return response
 })
 
 app.post('/storage/:ref/buckets/:id/empty', async (c) => {
@@ -1341,7 +1632,9 @@ app.post('/storage/:ref/buckets/:id/empty', async (c) => {
   const { ref, id } = c.req.param()
   const creds = await getProjectStorageCreds(ref, userId)
   if (!creds) return c.json({ message: 'Not found' }, 404)
-  return storageProxy(creds.site_url, creds.service_role_key, `bucket/${id}/empty`, 'POST', '{}')
+  const response = await storageProxy(creds.site_url, creds.service_role_key, `bucket/${id}/empty`, 'POST', '{}')
+  await auditEvent(creds.id, userId, 'storage.bucket.emptied', { bucket_id: id }, 'storage_bucket', id)
+  return response
 })
 
 // ─── Objects ──────────────────────────────────────────────────────────────────
@@ -1360,7 +1653,9 @@ app.delete('/storage/:ref/buckets/:id/objects', async (c) => {
   const creds = await getProjectStorageCreds(ref, userId)
   if (!creds) return c.json({ message: 'Not found' }, 404)
   const body = await bodyText(c)
-  return storageProxy(creds.site_url, creds.service_role_key, `object/${id}`, 'DELETE', body)
+  const response = await storageProxy(creds.site_url, creds.service_role_key, `object/${id}`, 'DELETE', body)
+  await auditEvent(creds.id, userId, 'storage.objects.deleted', { bucket_id: id }, 'storage_bucket', id)
+  return response
 })
 
 app.post('/storage/:ref/buckets/:id/objects/move', async (c) => {
@@ -1369,7 +1664,9 @@ app.post('/storage/:ref/buckets/:id/objects/move', async (c) => {
   const creds = await getProjectStorageCreds(ref, userId)
   if (!creds) return c.json({ message: 'Not found' }, 404)
   const body = await bodyText(c)
-  return storageProxy(creds.site_url, creds.service_role_key, 'object/move', 'POST', body)
+  const response = await storageProxy(creds.site_url, creds.service_role_key, 'object/move', 'POST', body)
+  await auditEvent(creds.id, userId, 'storage.object.moved', { body: safeJson(body) }, 'storage_object')
+  return response
 })
 
 app.post('/storage/:ref/buckets/:id/objects/sign', async (c) => {
@@ -1427,9 +1724,145 @@ app.delete('/storage/:ref/credentials/:id', async (c) => {
   return storageProxy(creds.site_url, creds.service_role_key, `s3/accesskeys/${id}`, 'DELETE')
 })
 
+app.get('/storage/:ref/buckets/:id/settings', async (c) => {
+  const userId = c.get('userId')
+  const { ref, id } = c.req.param()
+  const creds = await getProjectStorageCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found' }, 404)
+  const { rows } = await pool.query(
+    `SELECT bucket_id, quota_mb, max_file_size_bytes, allowed_mime_types, lifecycle, metrics, updated_at
+     FROM storage_bucket_settings WHERE project_id=$1 AND bucket_id=$2`,
+    [creds.id, id]
+  )
+  return c.json(rows[0] ?? {
+    bucket_id: id,
+    quota_mb: creds.quotas?.storage_mb ?? null,
+    max_file_size_bytes: null,
+    allowed_mime_types: null,
+    lifecycle: {},
+    metrics: {},
+  })
+})
+
+app.patch('/storage/:ref/buckets/:id/settings', async (c) => {
+  const userId = c.get('userId')
+  const { ref, id } = c.req.param()
+  const creds = await getProjectStorageCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found' }, 404)
+  const body = await c.req.json()
+  const { rows } = await pool.query(
+    `INSERT INTO storage_bucket_settings
+       (project_id, bucket_id, quota_mb, max_file_size_bytes, allowed_mime_types, lifecycle, updated_by)
+     VALUES($1, $2, $3, $4, $5, $6, $7)
+     ON CONFLICT (project_id, bucket_id) DO UPDATE SET
+       quota_mb=COALESCE(EXCLUDED.quota_mb, storage_bucket_settings.quota_mb),
+       max_file_size_bytes=COALESCE(EXCLUDED.max_file_size_bytes, storage_bucket_settings.max_file_size_bytes),
+       allowed_mime_types=COALESCE(EXCLUDED.allowed_mime_types, storage_bucket_settings.allowed_mime_types),
+       lifecycle=storage_bucket_settings.lifecycle || EXCLUDED.lifecycle,
+       updated_by=EXCLUDED.updated_by,
+       updated_at=NOW()
+     RETURNING bucket_id, quota_mb, max_file_size_bytes, allowed_mime_types, lifecycle, metrics, updated_at`,
+    [
+      creds.id,
+      id,
+      body.quota_mb ?? null,
+      body.max_file_size_bytes ?? null,
+      body.allowed_mime_types ?? null,
+      JSON.stringify(body.lifecycle ?? {}),
+      userId,
+    ]
+  )
+  await auditEvent(creds.id, userId, 'storage.bucket.settings.updated', { bucket_id: id, keys: Object.keys(body) }, 'storage_bucket', id)
+  return c.json(rows[0])
+})
+
+app.get('/storage/:ref/buckets/:id/lifecycle', async (c) => {
+  const userId = c.get('userId')
+  const { ref, id } = c.req.param()
+  const creds = await getProjectStorageCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found' }, 404)
+  const { rows } = await pool.query(
+    `SELECT lifecycle, updated_at FROM storage_bucket_settings WHERE project_id=$1 AND bucket_id=$2`,
+    [creds.id, id]
+  )
+  return c.json(rows[0] ?? { lifecycle: {}, updated_at: null })
+})
+
+app.patch('/storage/:ref/buckets/:id/lifecycle', async (c) => {
+  const userId = c.get('userId')
+  const { ref, id } = c.req.param()
+  const creds = await getProjectStorageCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found' }, 404)
+  const body = await c.req.json()
+  const { rows } = await pool.query(
+    `INSERT INTO storage_bucket_settings(project_id, bucket_id, lifecycle, updated_by)
+     VALUES($1, $2, $3, $4)
+     ON CONFLICT (project_id, bucket_id) DO UPDATE SET
+       lifecycle=EXCLUDED.lifecycle,
+       updated_by=EXCLUDED.updated_by,
+       updated_at=NOW()
+     RETURNING bucket_id, lifecycle, updated_at`,
+    [creds.id, id, JSON.stringify(body), userId]
+  )
+  await auditEvent(creds.id, userId, 'storage.bucket.lifecycle.updated', { bucket_id: id }, 'storage_bucket', id)
+  return c.json(rows[0])
+})
+
+app.get('/storage/:ref/buckets/:id/metrics', async (c) => {
+  const userId = c.get('userId')
+  const { ref, id } = c.req.param()
+  const creds = await getProjectStorageCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found' }, 404)
+  const sql = `
+    select jsonb_build_object(
+      'bucket_id', ${sqlLiteral(id)},
+      'object_count', count(*),
+      'storage_bytes', coalesce(sum((metadata->>'size')::bigint), 0),
+      'latest_upload_at', max(created_at)
+    ) as metrics
+    from storage.objects
+    where bucket_id = ${sqlLiteral(id)}`
+  const data = await fetchPgMetaQuery(creds.site_url, creds.service_role_key, sql)
+  const metrics = data?.[0]?.metrics ?? { bucket_id: id, object_count: 0, storage_bytes: 0 }
+  await pool.query(
+    `INSERT INTO storage_bucket_settings(project_id, bucket_id, metrics)
+     VALUES($1, $2, $3)
+     ON CONFLICT (project_id, bucket_id) DO UPDATE SET metrics=EXCLUDED.metrics, updated_at=NOW()`,
+    [creds.id, id, JSON.stringify(metrics)]
+  )
+  return c.json(metrics)
+})
+
+app.get('/storage/:ref/buckets/:id/policies', async (c) => {
+  const userId = c.get('userId')
+  const { ref, id } = c.req.param()
+  const creds = await getProjectStorageCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found' }, 404)
+  const sql = `
+    select jsonb_agg(jsonb_build_object(
+      'policy_name', policyname,
+      'command', cmd,
+      'roles', roles,
+      'using_expression', qual,
+      'check_expression', with_check,
+      'bucket_id', ${sqlLiteral(id)}
+    ) order by policyname) as policies
+    from pg_policies
+    where schemaname='storage'
+      and tablename='objects'
+      and (qual ilike '%' || ${sqlLiteral(id)} || '%' or with_check ilike '%' || ${sqlLiteral(id)} || '%')`
+  const data = await fetchPgMetaQuery(creds.site_url, creds.service_role_key, sql)
+  return c.json(data?.[0]?.policies ?? [])
+})
+
 // ─── Archive (export) ─────────────────────────────────────────────────────────
 app.post('/storage/:ref/archive', async (c) => {
-  return c.json({ message: 'Storage archive export not yet supported.' }, 501)
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const creds = await getProjectStorageCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found' }, 404)
+  await auditEvent(creds.id, userId, 'storage.archive.requested', {}, 'storage')
+  return c.json({ message: 'Storage archive export queued for external object-store tooling.' }, 202)
 })
 
 // ─── Vector / Analytics buckets — stub (advanced features) ────────────────────

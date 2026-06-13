@@ -173,3 +173,24 @@ services:
           hide_groups_header: true
           allow:
             - admin
+
+  ## Edge Functions
+  - name: functions-v1
+    _comment: "Edge Runtime: /functions/v1/*"
+    url: http://edge-runtime:9000/
+    routes:
+      - name: functions-v1-all
+        strip_path: true
+        paths:
+          - /functions/v1/
+    plugins:
+      - name: cors
+      - name: key-auth
+        config:
+          hide_credentials: false
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow:
+            - anon
+            - admin
