@@ -154,10 +154,16 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.spn-${PROJECT_REF}.rule=Host(`${PROJECT_REF}.db.hconsulting.app`)"
-      - "traefik.http.routers.spn-${PROJECT_REF}.entrypoints=websecure"
+      # Coolify's Traefik uses the 'https' entrypoint (not 'websecure') and only
+      # defines the 'letsencrypt' resolver. These projects sit behind the
+      # Cloudflare tunnel (noTLSVerify), so Traefik's default cert is fine — no
+      # ACME resolver needed; just serve TLS on the https entrypoint.
+      - "traefik.http.routers.spn-${PROJECT_REF}.entrypoints=https"
       - "traefik.http.routers.spn-${PROJECT_REF}.tls=true"
-      - "traefik.http.routers.spn-${PROJECT_REF}.tls.certresolver=cloudflare"
       - "traefik.http.services.spn-${PROJECT_REF}.loadbalancer.server.port=8000"
+      # Kong is on two networks; tell Traefik to reach it via the shared coolify
+      # network (Traefik isn't on spn-${PROJECT_REF}), else it picks the wrong IP → 503.
+      - "traefik.docker.network=coolify"
     networks:
       - spn-${PROJECT_REF}
       - coolify
