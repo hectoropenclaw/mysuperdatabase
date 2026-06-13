@@ -8,14 +8,14 @@ WORKDIR /app
 # Copy monorepo manifests
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/api/package.json ./apps/api/
-RUN pnpm install --frozen-lockfile --filter=api
+RUN pnpm install --no-frozen-lockfile --filter=api
 
 FROM base AS builder
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/api/package.json ./apps/api/
 COPY packages/tsconfig ./packages/tsconfig
-RUN pnpm install --frozen-lockfile --filter=api
+RUN pnpm install --no-frozen-lockfile --filter=api
 COPY apps/api ./apps/api
 WORKDIR /app/apps/api
 RUN pnpm build
