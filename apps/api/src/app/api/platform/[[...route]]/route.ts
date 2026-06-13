@@ -3,6 +3,7 @@ import { handle } from 'hono/vercel'
 import { exec } from 'child_process'
 import { promisify } from 'util'
 import path from 'path'
+import crypto from 'crypto'
 import { auth } from '@/lib/auth'
 import pool from '@/db/client'
 
@@ -14,6 +15,7 @@ export const runtime = 'nodejs'
 type Env = { Variables: { userId: string; userEmail: string } }
 
 const app = new Hono<Env>().basePath('/api/platform')
+const REF_RE = /^[a-z0-9]{6,32}$/
 
 // ─── Auth middleware ─────────────────────────────────────────────────────────
 app.use('*', async (c, next) => {
@@ -661,8 +663,9 @@ app.get('/auth/:ref/validate/spam', (c) => c.json({ is_spam: false }))
 // ═══════════════════════════════════════════════════════════════════════════════
 
 async function getProjectKongCreds(ref: string, userId: string) {
+  if (!REF_RE.test(ref)) return null
   const { rows } = await pool.query(
-    `SELECT p.service_role_key, p.site_url, p.status
+    `SELECT p.id, p.ref, p.name, p.org_id, p.db_password, p.service_role_key, p.site_url, p.status
      FROM projects p
      JOIN org_members om ON om.org_id = p.org_id
      WHERE p.ref=$1 AND om.user_id=$2 AND p.status='active'`,
@@ -724,6 +727,106 @@ app.patch('/pg-meta/:ref/*', pgMetaProxy)
 app.delete('/pg-meta/:ref/*', pgMetaProxy)
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// STUDIO OPERATIONS: schema snapshots, advisors, backups/restores, branches
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function fetchPgMetaQuery(siteUrl: string, serviceKey: string, query: string) {
+  const res = await fetch(`${siteUrl}/pg/query`, {
+    method: 'POST',
+    headers: {
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+      'Content-Type': 'application/json',
+      'x-pg-application-name': 'supanow-studio-ops',
+    },
+    body: JSON.stringify({ query, disable_statement_timeout: true }),
+  })
+  const data = await res.json().catch(() => null)
+  if (!res.ok) {
+    throw new Error(data?.message ?? data?.error ?? `pg-meta query failed (${res.status})`)
+  }
+  return data
+}
+
+async function fetchProjectSchema(project: any) {
+  const sql = `
+    select jsonb_build_object(
+      'schemas', coalesce(jsonb_agg(schema_doc order by schema_doc->>'name'), '[]'::jsonb)
+    ) as schema
+    from (
+      select jsonb_build_object(
+        'name', n.nspname,
+        'tables', coalesce((
+          select jsonb_agg(jsonb_build_object(
+            'name', c.relname,
+            'type', c.relkind,
+            'columns', coalesce((
+              select jsonb_agg(jsonb_build_object(
+                'name', a.attname,
+                'type', pg_catalog.format_type(a.atttypid, a.atttypmod),
+                'nullable', not a.attnotnull,
+                'default', pg_get_expr(ad.adbin, ad.adrelid)
+              ) order by a.attnum)
+              from pg_attribute a
+              left join pg_attrdef ad on ad.adrelid = a.attrelid and ad.adnum = a.attnum
+              where a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
+            ), '[]'::jsonb)
+          ) order by c.relname)
+          from pg_class c
+          where c.relnamespace = n.oid and c.relkind in ('r','p','v','m','f')
+        ), '[]'::jsonb)
+      ) as schema_doc
+      from pg_namespace n
+      where n.nspname not like 'pg_%'
+        and n.nspname not in ('information_schema', 'pg_toast')
+    ) s`
+  const rows = await fetchPgMetaQuery(project.site_url, project.service_role_key, sql)
+  return rows?.[0]?.schema ?? { schemas: [] }
+}
+
+function hashJson(value: unknown) {
+  return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex')
+}
+
+function schemaDiff(previous: any, next: any) {
+  const prevSchemas = new Map<string, any>((previous?.schemas ?? []).map((s: any) => [s.name, s]))
+  const nextSchemas = new Map<string, any>((next?.schemas ?? []).map((s: any) => [s.name, s]))
+  const addedSchemas = [...nextSchemas.keys()].filter((name) => !prevSchemas.has(name))
+  const removedSchemas = [...prevSchemas.keys()].filter((name) => !nextSchemas.has(name))
+  const changedTables: any[] = []
+
+  for (const [schemaName, schema] of nextSchemas) {
+    const prevSchema: any = prevSchemas.get(schemaName)
+    if (!prevSchema) continue
+    const prevTables = new Map<string, any>((prevSchema.tables ?? []).map((t: any) => [t.name, t]))
+    const nextTables = new Map<string, any>((schema.tables ?? []).map((t: any) => [t.name, t]))
+    for (const tableName of nextTables.keys()) {
+      if (!prevTables.has(tableName)) changedTables.push({ schema: schemaName, table: tableName, change: 'added' })
+    }
+    for (const tableName of prevTables.keys()) {
+      if (!nextTables.has(tableName)) changedTables.push({ schema: schemaName, table: tableName, change: 'removed' })
+    }
+    for (const [tableName, table] of nextTables) {
+      const prevTable = prevTables.get(tableName)
+      if (prevTable && hashJson(prevTable) !== hashJson(table)) {
+        changedTables.push({ schema: schemaName, table: tableName, change: 'changed' })
+      }
+    }
+  }
+
+  return { added_schemas: addedSchemas, removed_schemas: removedSchemas, changed_tables: changedTables }
+}
+
+function advisorSummary(findings: any[]) {
+  const countByLevel = findings.reduce((acc: Record<string, number>, item: any) => {
+    const level = item.level ?? item.severity ?? item.type ?? 'info'
+    acc[level] = (acc[level] ?? 0) + 1
+    return acc
+  }, {})
+  return { total: findings.length, count_by_level: countByLevel }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // PROJECT OPERATIONS
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -781,10 +884,291 @@ app.get('/projects/:ref/run-lints', async (c) => {
       },
     })
     const data = await res.json().catch(() => [])
-    return c.json(Array.isArray(data) ? data : [])
-  } catch {
+    const findings = Array.isArray(data) ? data : []
+    await pool.query(
+      `INSERT INTO advisor_runs(project_id, status, findings, summary, created_by)
+       VALUES($1, 'completed', $2, $3, $4)`,
+      [creds.id, JSON.stringify(findings), JSON.stringify(advisorSummary(findings)), userId]
+    )
+    return c.json(findings)
+  } catch (err: any) {
+    await pool.query(
+      `INSERT INTO advisor_runs(project_id, status, findings, summary, error, created_by)
+       VALUES($1, 'failed', '[]'::jsonb, '{}'::jsonb, $2, $3)`,
+      [creds.id, err.message, userId]
+    ).catch(() => {})
     return c.json([])
   }
+})
+
+app.get('/projects/:ref/advisor-runs', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const { rows } = await pool.query(
+    `SELECT id, status, source, summary, error, created_at
+     FROM advisor_runs WHERE project_id=$1 ORDER BY created_at DESC LIMIT 50`,
+    [project.id]
+  )
+  return c.json(rows)
+})
+
+app.post('/projects/:ref/schema-snapshots', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const body = await c.req.json().catch(() => ({}))
+  const schema = await fetchProjectSchema(project)
+  const schemaHash = hashJson(schema)
+  const { rows: previousRows } = await pool.query(
+    `SELECT id, schema_json FROM schema_snapshots
+     WHERE project_id=$1 ORDER BY created_at DESC LIMIT 1`,
+    [project.id]
+  )
+  const previous = previousRows[0]
+  const diff = previous ? schemaDiff(previous.schema_json, schema) : {}
+  const { rows } = await pool.query(
+    `INSERT INTO schema_snapshots
+       (project_id, name, schema_hash, schema_json, diff_from_snapshot_id, diff_json, created_by)
+     VALUES($1, $2, $3, $4, $5, $6, $7)
+     RETURNING id, name, schema_hash, diff_from_snapshot_id, diff_json, created_at`,
+    [
+      project.id,
+      body.name ?? 'manual',
+      schemaHash,
+      JSON.stringify(schema),
+      previous?.id ?? null,
+      JSON.stringify(diff),
+      userId,
+    ]
+  )
+  return c.json(rows[0], 201)
+})
+
+app.get('/projects/:ref/schema-snapshots', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const includeSchema = c.req.query('include_schema') === 'true'
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const projection = includeSchema
+    ? 'id, name, schema_hash, schema_json, diff_from_snapshot_id, diff_json, created_at'
+    : 'id, name, schema_hash, diff_from_snapshot_id, diff_json, created_at'
+  const { rows } = await pool.query(
+    `SELECT ${projection} FROM schema_snapshots
+     WHERE project_id=$1 ORDER BY created_at DESC LIMIT 50`,
+    [project.id]
+  )
+  return c.json(rows)
+})
+
+app.get('/projects/:ref/schema-diff', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const from = c.req.query('from')
+  const to = c.req.query('to')
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const { rows } = from && to
+    ? await pool.query(
+      `SELECT id, schema_json FROM schema_snapshots
+       WHERE project_id=$1 AND id = ANY($2::uuid[])
+       ORDER BY created_at DESC`,
+      [project.id, [from, to]]
+    )
+    : from
+      ? await pool.query(
+        `(
+          SELECT id, schema_json, created_at FROM schema_snapshots
+          WHERE project_id=$1 AND id=$2::uuid
+        )
+        UNION ALL
+        (
+          SELECT id, schema_json, created_at FROM schema_snapshots
+          WHERE project_id=$1 AND id<>$2::uuid
+          ORDER BY created_at DESC LIMIT 1
+        )
+        ORDER BY created_at DESC`,
+        [project.id, from]
+      )
+      : await pool.query(
+      `SELECT id, schema_json FROM schema_snapshots
+       WHERE project_id=$1 ORDER BY created_at DESC LIMIT 2`,
+      [project.id]
+      )
+  if (rows.length < 2) return c.json({ message: 'Need at least two snapshots' }, 400)
+  const newer = to ? rows.find((r) => r.id === to) ?? rows[0] : rows[0]
+  const older = from ? rows.find((r) => r.id === from) ?? rows[1] : rows[1]
+  return c.json({ from: older.id, to: newer.id, diff: schemaDiff(older.schema_json, newer.schema_json) })
+})
+
+app.get('/projects/:ref/inspectors', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const sql = `
+    select jsonb_build_object(
+      'tables', (select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname not like 'pg_%' and c.relkind in ('r','p')),
+      'views', (select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname not like 'pg_%' and c.relkind in ('v','m')),
+      'functions', (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname not like 'pg_%'),
+      'extensions', (select count(*) from pg_extension),
+      'database_size_bytes', pg_database_size(current_database())
+    ) as overview`
+  const rows = await fetchPgMetaQuery(project.site_url, project.service_role_key, sql)
+  return c.json(rows?.[0]?.overview ?? {})
+})
+
+app.get('/projects/:ref/backups', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const { rows } = await pool.query(
+    `SELECT id, status, backup_key, size_bytes, restore_of_backup_id, error, created_at, completed_at
+     FROM project_backups WHERE project_id=$1 ORDER BY created_at DESC LIMIT 50`,
+    [project.id]
+  )
+  return c.json(rows)
+})
+
+app.post('/projects/:ref/backups', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const { rows } = await pool.query(
+    `INSERT INTO project_backups(project_id, status, created_by)
+     VALUES($1, 'running', $2)
+     RETURNING id, created_at`,
+    [project.id, userId]
+  )
+  const backupId = rows[0].id
+  execAsync(`bash "${SCRIPTS_DIR}/backup.sh" "${ref}"`)
+    .then(async ({ stdout }) => {
+      const match = stdout.match(new RegExp('backed up .*? [^/]+/(.+?\\\\.sql\\\\.gz)'))
+      await pool.query(
+        `UPDATE project_backups
+         SET status='completed', backup_key=$1, completed_at=NOW()
+         WHERE id=$2`,
+        [match?.[1] ?? null, backupId]
+      )
+    })
+    .catch(async (err) => {
+      await pool.query(
+        `UPDATE project_backups SET status='failed', error=$1, completed_at=NOW() WHERE id=$2`,
+        [err.message, backupId]
+      ).catch(() => {})
+    })
+  return c.json({ id: backupId, status: 'running' }, 202)
+})
+
+app.post('/projects/:ref/restores', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const body = await c.req.json().catch(() => ({}))
+  const backupId = body.backup_id
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const { rows: backups } = await pool.query(
+    `SELECT id, backup_key FROM project_backups
+     WHERE id=$1 AND project_id=$2 AND status='completed'`,
+    [backupId, project.id]
+  )
+  if (!backups.length || !backups[0].backup_key) return c.json({ message: 'Backup not found' }, 404)
+  const { rows } = await pool.query(
+    `INSERT INTO project_backups(project_id, status, restore_of_backup_id, created_by)
+     VALUES($1, 'running', $2, $3)
+     RETURNING id`,
+    [project.id, backups[0].id, userId]
+  )
+  const restoreId = rows[0].id
+  execAsync(`bash "${SCRIPTS_DIR}/restore.sh" "${ref}" "${backups[0].backup_key}"`)
+    .then(async () => {
+      await pool.query(
+        `UPDATE project_backups SET status='completed', completed_at=NOW() WHERE id=$1`,
+        [restoreId]
+      )
+    })
+    .catch(async (err) => {
+      await pool.query(
+        `UPDATE project_backups SET status='failed', error=$1, completed_at=NOW() WHERE id=$2`,
+        [err.message, restoreId]
+      ).catch(() => {})
+    })
+  return c.json({ id: restoreId, status: 'running' }, 202)
+})
+
+app.get('/projects/:ref/branches', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const { rows } = await pool.query(
+    `SELECT b.id, b.name, b.status, b.error, b.created_at, p.ref, p.site_url
+     FROM project_branches b
+     LEFT JOIN projects p ON p.id=b.branch_project_id
+     WHERE b.source_project_id=$1
+     ORDER BY b.created_at DESC`,
+    [project.id]
+  )
+  return c.json(rows)
+})
+
+app.post('/projects/:ref/branches', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const body = await c.req.json().catch(() => ({}))
+  const name = String(body.name ?? '').trim()
+  if (!name) return c.json({ message: 'name is required' }, 400)
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const branchRef = generateRef()
+  const { rows: branchRows } = await pool.query(
+    `INSERT INTO project_branches(source_project_id, name, status, created_by)
+     VALUES($1, $2, 'creating', $3)
+     RETURNING id, name, status`,
+    [project.id, name, userId]
+  )
+  const branch = branchRows[0]
+  const { rows: projectRows } = await pool.query(
+    `INSERT INTO projects(ref, name, org_id, status)
+     VALUES($1, $2, $3, 'provisioning')
+     RETURNING id`,
+    [branchRef, `${project.name} / ${name}`, project.org_id]
+  )
+  await pool.query(
+    `UPDATE project_branches SET branch_project_id=$1 WHERE id=$2`,
+    [projectRows[0].id, branch.id]
+  )
+
+  import('@/lib/provision').then(({ provisionProject }) =>
+    provisionProject(branchRef)
+      .then(async (keys) => {
+        await pool.query(
+          `UPDATE projects SET status='active', site_url=$1, anon_key=$2,
+           service_role_key=$3, db_password=$4, jwt_secret=$5,
+           storage_s3_access_key=$6, storage_s3_secret_key=$7 WHERE ref=$8`,
+          [keys.siteUrl, keys.anonKey, keys.serviceKey, keys.dbPassword, keys.jwtSecret,
+           keys.s3AccessKey, keys.s3SecretKey, branchRef]
+        )
+        await execAsync(
+          `docker exec -e PGPASSWORD="${project.db_password}" "spn-${ref}-db-1" pg_dump -U postgres -h 127.0.0.1 postgres ` +
+          `| docker exec -i "spn-${branchRef}-db-1" psql -U postgres -h 127.0.0.1 postgres`
+        )
+        await pool.query(`UPDATE project_branches SET status='ready' WHERE id=$1`, [branch.id])
+      })
+      .catch(async (err: any) => {
+        await pool.query(
+          `UPDATE project_branches SET status='failed', error=$1 WHERE id=$2`,
+          [err.message, branch.id]
+        ).catch(() => {})
+      })
+  )
+
+  return c.json({ ...branch, ref: branchRef }, 202)
 })
 
 // ─── GET /platform/projects/:ref/status ───────────────────────────────────────
@@ -845,12 +1229,17 @@ app.get('/projects/:ref/connection-string', async (c) => {
 // ─── GET /platform/projects/:ref/resources/:id ────────────────────────────────
 // Studio calls this for compute size display; return a stub
 app.get('/projects/:ref/resources/:id', (c) => {
+  const { ref } = c.req.param()
   return c.json({
     identifier: 'ci_micro',
-    name: 'Micro',
+    name: 'Self-hosted container',
     type: 'compute_instance',
     price: 0,
     price_interval: 'monthly',
+    project_ref: ref,
+    cpu: 'shared',
+    memory_mb: null,
+    disk_volume_size_gb: 8,
   })
 })
 
@@ -1089,8 +1478,8 @@ function projectToStudioShape(p: any) {
     dbVersion: '150001',
     high_availability: false,
     integration_source: null,
-    is_branch_enabled: false,
-    is_physical_backups_enabled: false,
+    is_branch_enabled: true,
+    is_physical_backups_enabled: true,
   }
 }
 
