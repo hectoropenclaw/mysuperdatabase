@@ -266,18 +266,21 @@ wait_healthy "spn-${PROJECT_REF}-realtime-1" "$HEALTH_TIMEOUT" || true  # slow s
 # ─── Register project in control plane DB ─────────────────────────────────────
 echo "→ Registering project in control plane DB..."
 
-# Ensure a default system org exists (idempotent)
+# Ensure a default system org exists (idempotent).
+# Note: psql can append the command tag (e.g. "INSERT 0 1") after the RETURNING
+# row, so extract only the UUID line — otherwise the project INSERT below gets a
+# malformed org_id and fails with "invalid input syntax for type uuid".
 SYSTEM_ORG_ID=$(docker run --rm --network host postgres:17-alpine \
   psql "$CP_DATABASE_URL" -tAc \
   "INSERT INTO organizations (name, slug, plan)
-   VALUES ('system', 'system', 'internal')
+   VALUES ('system', 'system', 'free')
    ON CONFLICT (slug) DO UPDATE SET name=EXCLUDED.name
-   RETURNING id;" 2>/dev/null || echo "")
+   RETURNING id;" 2>/dev/null | grep -Eom1 '[0-9a-f-]{36}' || echo "")
 
 if [[ -z "$SYSTEM_ORG_ID" ]]; then
   SYSTEM_ORG_ID=$(docker run --rm --network host postgres:17-alpine \
     psql "$CP_DATABASE_URL" -tAc \
-    "SELECT id FROM organizations WHERE slug='system' LIMIT 1" 2>/dev/null || echo "")
+    "SELECT id FROM organizations WHERE slug='system' LIMIT 1" 2>/dev/null | grep -Eom1 '[0-9a-f-]{36}' || echo "")
 fi
 
 ORG_ID="${ORG_ID:-$SYSTEM_ORG_ID}"
