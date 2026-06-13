@@ -307,7 +307,7 @@ app.get('/projects/:ref/functions/:slug/body', async (c) => {
   const { exec } = await import('child_process')
   const { promisify } = await import('util')
   const execAsync = promisify(exec)
-  const container = `msd-${ref}-edge-runtime-1`
+  const container = `spn-${ref}-edge-runtime-1`
   const entrypoint = rows[0].entrypoint_path ?? 'index.ts'
   try {
     const { stdout } = await execAsync(
@@ -352,7 +352,7 @@ app.delete('/projects/:ref/functions/:slug', async (c) => {
   const { exec } = await import('child_process')
   const { promisify } = await import('util')
   const execAsync = promisify(exec)
-  const container = `msd-${ref}-edge-runtime-1`
+  const container = `spn-${ref}-edge-runtime-1`
   await execAsync(`docker exec ${container} rm -rf /home/deno/functions/${slug}`).catch(() => {})
 
   return c.json({ success: true })

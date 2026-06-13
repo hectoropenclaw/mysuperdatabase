@@ -1,9 +1,10 @@
-'use client'
-
-import { signIn } from 'next-auth/react'
+export const dynamic = 'force-dynamic'
 
 export default function SignInPage({ searchParams }: { searchParams: Record<string, string> }) {
   const error = searchParams?.error
+  const githubEnabled = Boolean(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET)
+  const googleEnabled = Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)
+  const hasProvider = githubEnabled || googleEnabled
 
   return (
     <main style={{
@@ -20,16 +21,39 @@ export default function SignInPage({ searchParams }: { searchParams: Record<stri
         </p>
       )}
 
-      <button
-        onClick={() => signIn('github', { callbackUrl: '/' })}
-        style={{
-          padding: '10px 28px', borderRadius: 8, border: 'none',
-          background: '#238636', color: '#fff', cursor: 'pointer',
-          fontSize: 15, fontWeight: 500, marginTop: 8
-        }}
-      >
-        Continue with GitHub
-      </button>
+      {githubEnabled && (
+        <a
+          href="/api/auth/signin/github?callbackUrl=%2F"
+          style={{
+            display: 'inline-block',
+            padding: '10px 28px', borderRadius: 8, border: 'none',
+            background: '#238636', color: '#fff', cursor: 'pointer',
+            fontSize: 15, fontWeight: 500, marginTop: 8, textDecoration: 'none'
+          }}
+        >
+          Continue with GitHub
+        </a>
+      )}
+
+      {googleEnabled && (
+        <a
+          href="/api/auth/signin/google?callbackUrl=%2F"
+          style={{
+            display: 'inline-block',
+            padding: '10px 28px', borderRadius: 8, border: '1px solid #3a4567',
+            background: '#111522', color: '#fff', cursor: 'pointer',
+            fontSize: 15, fontWeight: 500, textDecoration: 'none'
+          }}
+        >
+          Continue with Google
+        </a>
+      )}
+
+      {!hasProvider && (
+        <p style={{ color: '#FBBF24', fontSize: 13, background: '#1c1c2a', padding: '8px 16px', borderRadius: 8 }}>
+          No auth providers are configured yet. Set GitHub or Google OAuth env vars.
+        </p>
+      )}
     </main>
   )
 }

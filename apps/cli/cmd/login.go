@@ -15,14 +15,14 @@ var loginCmd = &cobra.Command{
 	Short: "Authenticate with supanow",
 	Long: `Log in by providing your API token.
 
-Generate a token at: https://supabase.hconsulting.app/account/tokens`,
+Generate a token at: https://supanow.launchpad.hconsulting.mx/account/tokens`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		tokenFlag, _ := cmd.Flags().GetString("token")
 		apiURL, _ := cmd.Flags().GetString("api-url")
 
 		token := tokenFlag
 		if token == "" {
-			fmt.Print("Enter your API token (from https://supabase.hconsulting.app/account/tokens): ")
+			fmt.Print("Enter your API token (from https://supanow.launchpad.hconsulting.mx/account/tokens): ")
 			reader := bufio.NewReader(os.Stdin)
 			t, err := reader.ReadString('\n')
 			if err != nil {
