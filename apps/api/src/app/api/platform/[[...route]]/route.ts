@@ -26,6 +26,20 @@ const COMPONENT_VERSIONS = {
   edgeRuntime: 'supabase/edge-runtime:v1.74.0',
   kong: 'kong/kong:3.9.1',
 }
+const AUTH_PROVIDER_KEYS: Record<string, { enabled: string; clientId: string; secret: string; extra?: string[] }> = {
+  github: { enabled: 'EXTERNAL_GITHUB_ENABLED', clientId: 'EXTERNAL_GITHUB_CLIENT_ID', secret: 'EXTERNAL_GITHUB_SECRET' },
+  google: { enabled: 'EXTERNAL_GOOGLE_ENABLED', clientId: 'EXTERNAL_GOOGLE_CLIENT_ID', secret: 'EXTERNAL_GOOGLE_SECRET' },
+  discord: { enabled: 'EXTERNAL_DISCORD_ENABLED', clientId: 'EXTERNAL_DISCORD_CLIENT_ID', secret: 'EXTERNAL_DISCORD_SECRET' },
+  twitter: { enabled: 'EXTERNAL_TWITTER_ENABLED', clientId: 'EXTERNAL_TWITTER_CLIENT_ID', secret: 'EXTERNAL_TWITTER_SECRET' },
+  facebook: { enabled: 'EXTERNAL_FACEBOOK_ENABLED', clientId: 'EXTERNAL_FACEBOOK_CLIENT_ID', secret: 'EXTERNAL_FACEBOOK_SECRET' },
+  apple: { enabled: 'EXTERNAL_APPLE_ENABLED', clientId: 'EXTERNAL_APPLE_CLIENT_ID', secret: 'EXTERNAL_APPLE_SECRET' },
+  linkedin_oidc: { enabled: 'EXTERNAL_LINKEDIN_OIDC_ENABLED', clientId: 'EXTERNAL_LINKEDIN_OIDC_CLIENT_ID', secret: 'EXTERNAL_LINKEDIN_OIDC_SECRET' },
+  slack_oidc: { enabled: 'EXTERNAL_SLACK_OIDC_ENABLED', clientId: 'EXTERNAL_SLACK_OIDC_CLIENT_ID', secret: 'EXTERNAL_SLACK_OIDC_SECRET' },
+  twitch: { enabled: 'EXTERNAL_TWITCH_ENABLED', clientId: 'EXTERNAL_TWITCH_CLIENT_ID', secret: 'EXTERNAL_TWITCH_SECRET' },
+  spotify: { enabled: 'EXTERNAL_SPOTIFY_ENABLED', clientId: 'EXTERNAL_SPOTIFY_CLIENT_ID', secret: 'EXTERNAL_SPOTIFY_SECRET' },
+  gitlab: { enabled: 'EXTERNAL_GITLAB_ENABLED', clientId: 'EXTERNAL_GITLAB_CLIENT_ID', secret: 'EXTERNAL_GITLAB_SECRET', extra: ['EXTERNAL_GITLAB_URL'] },
+  bitbucket: { enabled: 'EXTERNAL_BITBUCKET_ENABLED', clientId: 'EXTERNAL_BITBUCKET_CLIENT_ID', secret: 'EXTERNAL_BITBUCKET_SECRET' },
+}
 
 async function auditEvent(
   projectId: string | null,
@@ -549,7 +563,7 @@ app.patch('/auth/:ref/config', async (c) => {
   }
 
   // Run update-auth-config.sh in background (don't block HTTP response)
-  const envPairs = Object.entries(env).map(([k, v]) => `${k}=${v}`).join(' ')
+  const envPairs = Object.entries(env).map(([k, v]) => `${k}=${shellQuote(v)}`).join(' ')
   const scriptPath = `${SCRIPTS_DIR}/update-auth-config.sh`
   execAsync(`env ${envPairs} bash "${scriptPath}" "${ref}"`).catch((err) =>
     console.error(`[auth-config] update failed for ${ref}:`, err.message)
@@ -789,6 +803,215 @@ app.get('/auth/:ref/audit', async (c) => {
     [creds.id]
   )
   return c.json(rows)
+})
+
+app.get('/auth/:ref/providers', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const creds = await getProjectAuthCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found or project not active' }, 404)
+  const stored = creds.auth_config ?? {}
+  const { rows } = await pool.query(
+    `SELECT provider, enabled, client_id, scopes, redirect_uri, metadata, updated_at
+     FROM auth_provider_configs WHERE project_id=$1 ORDER BY provider`,
+    [creds.id]
+  )
+  const persisted = new Map(rows.map((row: any) => [row.provider, row]))
+  const providers = Object.entries(AUTH_PROVIDER_KEYS).map(([provider, keys]) => {
+    const row: any = persisted.get(provider)
+    return {
+      provider,
+      enabled: row?.enabled ?? Boolean(stored[keys.enabled]),
+      client_id: row?.client_id ?? stored[keys.clientId] ?? '',
+      has_secret: Boolean(stored[keys.secret]),
+      scopes: row?.scopes ?? [],
+      redirect_uri: row?.redirect_uri ?? `${creds.site_url}/auth/v1/callback`,
+      metadata: row?.metadata ?? {},
+      updated_at: row?.updated_at ?? null,
+    }
+  })
+  return c.json(providers)
+})
+
+app.patch('/auth/:ref/providers/:provider', async (c) => {
+  const userId = c.get('userId')
+  const { ref, provider } = c.req.param()
+  const providerKey = provider.toLowerCase()
+  const keys = AUTH_PROVIDER_KEYS[providerKey]
+  if (!keys) return c.json({ message: `Unsupported provider: ${provider}` }, 400)
+  const creds = await getProjectAuthCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found or project not active' }, 404)
+  const body = await c.req.json()
+  const current = creds.auth_config ?? {}
+  const merged = {
+    ...current,
+    [keys.enabled]: body.enabled ?? current[keys.enabled] ?? false,
+    [keys.clientId]: body.client_id ?? current[keys.clientId] ?? '',
+    ...(body.secret !== undefined ? { [keys.secret]: body.secret } : {}),
+    ...(providerKey === 'gitlab' && body.gitlab_url ? { EXTERNAL_GITLAB_URL: body.gitlab_url } : {}),
+  }
+  await pool.query('UPDATE projects SET auth_config=$1, updated_at=NOW() WHERE ref=$2', [JSON.stringify(merged), ref])
+  const { rows } = await pool.query(
+    `INSERT INTO auth_provider_configs
+       (project_id, provider, enabled, client_id, secret_ref, scopes, redirect_uri, metadata, updated_by)
+     VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     ON CONFLICT(project_id, provider) DO UPDATE SET
+       enabled=EXCLUDED.enabled,
+       client_id=EXCLUDED.client_id,
+       secret_ref=EXCLUDED.secret_ref,
+       scopes=EXCLUDED.scopes,
+       redirect_uri=EXCLUDED.redirect_uri,
+       metadata=EXCLUDED.metadata,
+       updated_by=EXCLUDED.updated_by,
+       updated_at=NOW()
+     RETURNING provider, enabled, client_id, scopes, redirect_uri, metadata, updated_at`,
+    [
+      creds.id,
+      providerKey,
+      Boolean(merged[keys.enabled]),
+      merged[keys.clientId] || null,
+      body.secret !== undefined ? `${providerKey}.oauth.secret` : null,
+      body.scopes ?? [],
+      body.redirect_uri ?? `${creds.site_url}/auth/v1/callback`,
+      JSON.stringify(body.metadata ?? {}),
+      userId,
+    ]
+  )
+  const env: Record<string, string> = {
+    [`GOTRUE_${keys.enabled}`]: String(merged[keys.enabled] ?? false),
+    [`GOTRUE_${keys.clientId}`]: merged[keys.clientId] ?? '',
+    [`GOTRUE_${keys.secret}`]: merged[keys.secret] ?? '',
+  }
+  if (providerKey === 'gitlab') env.GOTRUE_EXTERNAL_GITLAB_URL = merged.EXTERNAL_GITLAB_URL ?? 'https://gitlab.com'
+  const envPairs = Object.entries(env).map(([k, v]) => `${k}=${shellQuote(v)}`).join(' ')
+  execAsync(`env ${envPairs} bash "${SCRIPTS_DIR}/update-auth-config.sh" "${ref}"`).catch((err) =>
+    console.error(`[auth-provider] update failed for ${ref}/${providerKey}:`, err.message)
+  )
+  await auditEvent(creds.id, userId, 'auth.provider.updated', { provider: providerKey, enabled: Boolean(merged[keys.enabled]) }, 'auth_provider', providerKey)
+  return c.json({ ...rows[0], has_secret: Boolean(merged[keys.secret]), message: 'Provider update queued.' })
+})
+
+app.get('/auth/:ref/rate-limits', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const creds = await getProjectAuthCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found or project not active' }, 404)
+  const { rows } = await pool.query(
+    `SELECT email_per_hour, sms_per_hour, token_refresh_per_minute,
+            anonymous_signins_per_hour, updated_at
+     FROM auth_rate_limits WHERE project_id=$1`,
+    [creds.id]
+  )
+  return c.json(rows[0] ?? {
+    email_per_hour: 30,
+    sms_per_hour: 10,
+    token_refresh_per_minute: 60,
+    anonymous_signins_per_hour: 60,
+    updated_at: null,
+  })
+})
+
+app.patch('/auth/:ref/rate-limits', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const creds = await getProjectAuthCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found or project not active' }, 404)
+  const body = await c.req.json()
+  const { rows } = await pool.query(
+    `INSERT INTO auth_rate_limits
+       (project_id, email_per_hour, sms_per_hour, token_refresh_per_minute, anonymous_signins_per_hour, updated_by)
+     VALUES($1, $2, $3, $4, $5, $6)
+     ON CONFLICT(project_id) DO UPDATE SET
+       email_per_hour=COALESCE(EXCLUDED.email_per_hour, auth_rate_limits.email_per_hour),
+       sms_per_hour=COALESCE(EXCLUDED.sms_per_hour, auth_rate_limits.sms_per_hour),
+       token_refresh_per_minute=COALESCE(EXCLUDED.token_refresh_per_minute, auth_rate_limits.token_refresh_per_minute),
+       anonymous_signins_per_hour=COALESCE(EXCLUDED.anonymous_signins_per_hour, auth_rate_limits.anonymous_signins_per_hour),
+       updated_by=EXCLUDED.updated_by,
+       updated_at=NOW()
+     RETURNING email_per_hour, sms_per_hour, token_refresh_per_minute, anonymous_signins_per_hour, updated_at`,
+    [
+      creds.id,
+      body.email_per_hour ?? null,
+      body.sms_per_hour ?? null,
+      body.token_refresh_per_minute ?? null,
+      body.anonymous_signins_per_hour ?? null,
+      userId,
+    ]
+  )
+  await auditEvent(creds.id, userId, 'auth.rate_limits.updated', { keys: Object.keys(body) }, 'auth_rate_limits', ref)
+  return c.json(rows[0])
+})
+
+app.get('/auth/:ref/mfa-policy', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const creds = await getProjectAuthCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found or project not active' }, 404)
+  const { rows } = await pool.query(
+    `SELECT totp_enabled, phone_enabled, issuer, max_enrollment_frequency_seconds,
+            require_for_admins, require_for_all_users, recovery_codes_enabled, updated_at
+     FROM auth_mfa_policies WHERE project_id=$1`,
+    [creds.id]
+  )
+  return c.json(rows[0] ?? {
+    totp_enabled: true,
+    phone_enabled: false,
+    issuer: 'supanow',
+    max_enrollment_frequency_seconds: 0,
+    require_for_admins: false,
+    require_for_all_users: false,
+    recovery_codes_enabled: true,
+    updated_at: null,
+  })
+})
+
+app.patch('/auth/:ref/mfa-policy', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const creds = await getProjectAuthCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found or project not active' }, 404)
+  const body = await c.req.json()
+  const { rows } = await pool.query(
+    `INSERT INTO auth_mfa_policies
+       (project_id, totp_enabled, phone_enabled, issuer, max_enrollment_frequency_seconds,
+        require_for_admins, require_for_all_users, recovery_codes_enabled, updated_by)
+     VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     ON CONFLICT(project_id) DO UPDATE SET
+       totp_enabled=COALESCE(EXCLUDED.totp_enabled, auth_mfa_policies.totp_enabled),
+       phone_enabled=COALESCE(EXCLUDED.phone_enabled, auth_mfa_policies.phone_enabled),
+       issuer=COALESCE(EXCLUDED.issuer, auth_mfa_policies.issuer),
+       max_enrollment_frequency_seconds=COALESCE(EXCLUDED.max_enrollment_frequency_seconds, auth_mfa_policies.max_enrollment_frequency_seconds),
+       require_for_admins=COALESCE(EXCLUDED.require_for_admins, auth_mfa_policies.require_for_admins),
+       require_for_all_users=COALESCE(EXCLUDED.require_for_all_users, auth_mfa_policies.require_for_all_users),
+       recovery_codes_enabled=COALESCE(EXCLUDED.recovery_codes_enabled, auth_mfa_policies.recovery_codes_enabled),
+       updated_by=EXCLUDED.updated_by,
+       updated_at=NOW()
+     RETURNING totp_enabled, phone_enabled, issuer, max_enrollment_frequency_seconds,
+       require_for_admins, require_for_all_users, recovery_codes_enabled, updated_at`,
+    [
+      creds.id,
+      body.totp_enabled ?? null,
+      body.phone_enabled ?? null,
+      body.issuer ?? null,
+      body.max_enrollment_frequency_seconds ?? null,
+      body.require_for_admins ?? null,
+      body.require_for_all_users ?? null,
+      body.recovery_codes_enabled ?? null,
+      userId,
+    ]
+  )
+  const current = creds.auth_config ?? {}
+  const merged = {
+    ...current,
+    MFA_TOTP_ISSUER: rows[0].issuer,
+    MFA_TOTP_ENROLLMENT_MAX_FREQUENCY: rows[0].max_enrollment_frequency_seconds,
+  }
+  await pool.query('UPDATE projects SET auth_config=$1, updated_at=NOW() WHERE ref=$2', [JSON.stringify(merged), ref])
+  execAsync(
+    `env GOTRUE_MFA_TOTP_ISSUER=${shellQuote(rows[0].issuer)} GOTRUE_MFA_TOTP_ENROLLMENT_MAX_FREQUENCY=${shellQuote(rows[0].max_enrollment_frequency_seconds)} bash "${SCRIPTS_DIR}/update-auth-config.sh" "${ref}"`
+  ).catch((err) => console.error(`[mfa-policy] update failed for ${ref}:`, err.message))
+  await auditEvent(creds.id, userId, 'auth.mfa_policy.updated', { keys: Object.keys(body) }, 'auth_mfa_policy', ref)
+  return c.json({ ...rows[0], message: 'MFA policy update queued.' })
 })
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1476,6 +1699,265 @@ app.get('/projects/:ref/audit', async (c) => {
   return c.json(rows)
 })
 
+app.get('/realtime/:ref/settings', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const { rows } = await pool.query(
+    `SELECT presence_enabled, broadcast_enabled, postgres_changes_enabled,
+            max_channels_per_client, max_events_per_second, max_payload_kb,
+            retention_hours, updated_at
+     FROM realtime_settings WHERE project_id=$1`,
+    [project.id]
+  )
+  return c.json(rows[0] ?? {
+    presence_enabled: true,
+    broadcast_enabled: true,
+    postgres_changes_enabled: true,
+    max_channels_per_client: 100,
+    max_events_per_second: 100,
+    max_payload_kb: 256,
+    retention_hours: 24,
+    updated_at: null,
+  })
+})
+
+app.patch('/realtime/:ref/settings', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const body = await c.req.json()
+  const { rows } = await pool.query(
+    `INSERT INTO realtime_settings
+       (project_id, presence_enabled, broadcast_enabled, postgres_changes_enabled,
+        max_channels_per_client, max_events_per_second, max_payload_kb, retention_hours, updated_by)
+     VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     ON CONFLICT(project_id) DO UPDATE SET
+       presence_enabled=COALESCE(EXCLUDED.presence_enabled, realtime_settings.presence_enabled),
+       broadcast_enabled=COALESCE(EXCLUDED.broadcast_enabled, realtime_settings.broadcast_enabled),
+       postgres_changes_enabled=COALESCE(EXCLUDED.postgres_changes_enabled, realtime_settings.postgres_changes_enabled),
+       max_channels_per_client=COALESCE(EXCLUDED.max_channels_per_client, realtime_settings.max_channels_per_client),
+       max_events_per_second=COALESCE(EXCLUDED.max_events_per_second, realtime_settings.max_events_per_second),
+       max_payload_kb=COALESCE(EXCLUDED.max_payload_kb, realtime_settings.max_payload_kb),
+       retention_hours=COALESCE(EXCLUDED.retention_hours, realtime_settings.retention_hours),
+       updated_by=EXCLUDED.updated_by,
+       updated_at=NOW()
+     RETURNING presence_enabled, broadcast_enabled, postgres_changes_enabled,
+       max_channels_per_client, max_events_per_second, max_payload_kb, retention_hours, updated_at`,
+    [
+      project.id,
+      body.presence_enabled ?? null,
+      body.broadcast_enabled ?? null,
+      body.postgres_changes_enabled ?? null,
+      body.max_channels_per_client ?? null,
+      body.max_events_per_second ?? null,
+      body.max_payload_kb ?? null,
+      body.retention_hours ?? null,
+      userId,
+    ]
+  )
+  await auditEvent(project.id, userId, 'realtime.settings.updated', { keys: Object.keys(body) }, 'realtime', ref)
+  return c.json(rows[0])
+})
+
+app.get('/realtime/:ref/cdc', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const sql = `
+    select coalesce(jsonb_agg(jsonb_build_object(
+      'schema', schemaname,
+      'table', tablename
+    ) order by schemaname, tablename), '[]'::jsonb) as tables
+    from pg_publication_tables
+    where pubname = 'supabase_realtime'`
+  const data = await fetchPgMetaQuery(project.site_url, project.service_role_key, sql)
+  return c.json(data?.[0]?.tables ?? [])
+})
+
+app.post('/realtime/:ref/cdc', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const body = await c.req.json()
+  const schema = body.schema ?? 'public'
+  const table = body.table
+  if (!table) return c.json({ message: 'table is required' }, 400)
+  const publicationSql = `
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+        CREATE PUBLICATION supabase_realtime;
+      END IF;
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_publication_tables
+        WHERE pubname = 'supabase_realtime'
+          AND schemaname = ${sqlLiteral(schema)}
+          AND tablename = ${sqlLiteral(table)}
+      ) THEN
+        EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE %I.%I', ${sqlLiteral(schema)}, ${sqlLiteral(table)});
+      END IF;
+    END $$;
+    ${body.replica_identity_full ? `ALTER TABLE ${sqlIdent(schema)}.${sqlIdent(table)} REPLICA IDENTITY FULL;` : ''}`
+  await fetchPgMetaQuery(project.site_url, project.service_role_key, publicationSql)
+  await auditEvent(project.id, userId, 'realtime.cdc.enabled', { schema, table, replica_identity_full: Boolean(body.replica_identity_full) }, 'realtime_cdc', `${schema}.${table}`)
+  return c.json({ schema, table, postgres_changes_enabled: true, status: 'enabled' })
+})
+
+app.delete('/realtime/:ref/cdc/:schema/:table', async (c) => {
+  const userId = c.get('userId')
+  const { ref, schema, table } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  await fetchPgMetaQuery(
+    project.site_url,
+    project.service_role_key,
+    `DO $$
+     BEGIN
+       IF EXISTS (
+         SELECT 1 FROM pg_publication_tables
+         WHERE pubname = 'supabase_realtime'
+           AND schemaname = ${sqlLiteral(schema)}
+           AND tablename = ${sqlLiteral(table)}
+       ) THEN
+         EXECUTE format('ALTER PUBLICATION supabase_realtime DROP TABLE %I.%I', ${sqlLiteral(schema)}, ${sqlLiteral(table)});
+       END IF;
+     END $$;`
+  )
+  await auditEvent(project.id, userId, 'realtime.cdc.disabled', { schema, table }, 'realtime_cdc', `${schema}.${table}`)
+  return c.json({ schema, table, status: 'disabled' })
+})
+
+app.get('/realtime/:ref/metrics', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const { rows } = await pool.query(
+    `SELECT metric_date, cdc_tables, active_channels, presence_enabled,
+            broadcast_enabled, postgres_changes_enabled, health, created_at
+     FROM realtime_metrics WHERE project_id=$1 ORDER BY metric_date DESC LIMIT 30`,
+    [project.id]
+  )
+  return c.json(rows)
+})
+
+app.post('/realtime/:ref/metrics/collect', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const settingsRes = await pool.query('SELECT * FROM realtime_settings WHERE project_id=$1', [project.id])
+  const settings = settingsRes.rows[0] ?? {
+    presence_enabled: true,
+    broadcast_enabled: true,
+    postgres_changes_enabled: true,
+  }
+  const data = await fetchPgMetaQuery(
+    project.site_url,
+    project.service_role_key,
+    `select count(*)::int as cdc_tables from pg_publication_tables where pubname='supabase_realtime'`
+  )
+  const health = await timedProbe('realtime', `${project.site_url}/realtime/v1/`, {
+    apikey: project.service_role_key,
+    Authorization: `Bearer ${project.service_role_key}`,
+  })
+  const { rows } = await pool.query(
+    `INSERT INTO realtime_metrics
+       (project_id, metric_date, cdc_tables, active_channels, presence_enabled,
+        broadcast_enabled, postgres_changes_enabled, health)
+     VALUES($1, CURRENT_DATE, $2, $3, $4, $5, $6, $7)
+     ON CONFLICT(project_id, metric_date) DO UPDATE SET
+       cdc_tables=EXCLUDED.cdc_tables,
+       active_channels=EXCLUDED.active_channels,
+       presence_enabled=EXCLUDED.presence_enabled,
+       broadcast_enabled=EXCLUDED.broadcast_enabled,
+       postgres_changes_enabled=EXCLUDED.postgres_changes_enabled,
+       health=EXCLUDED.health,
+       created_at=NOW()
+     RETURNING metric_date, cdc_tables, active_channels, presence_enabled,
+       broadcast_enabled, postgres_changes_enabled, health, created_at`,
+    [
+      project.id,
+      data?.[0]?.cdc_tables ?? 0,
+      0,
+      settings.presence_enabled,
+      settings.broadcast_enabled,
+      settings.postgres_changes_enabled,
+      JSON.stringify(health),
+    ]
+  )
+  await auditEvent(project.id, userId, 'realtime.metrics.collected', rows[0], 'realtime', ref)
+  return c.json(rows[0])
+})
+
+app.get('/realtime/:ref/debug-events', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const { rows } = await pool.query(
+    `SELECT id, event_type, channel, payload, result, created_at
+     FROM realtime_debug_events
+     WHERE project_id=$1 ORDER BY created_at DESC LIMIT 100`,
+    [project.id]
+  )
+  return c.json(rows)
+})
+
+app.post('/realtime/:ref/debug', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const body = await c.req.json().catch(() => ({}))
+  const channel = body.channel ?? 'supanow-debug'
+  const payload = body.payload ?? { ok: true, at: new Date().toISOString() }
+  const health = await timedProbe('realtime', `${project.site_url}/realtime/v1/`, {
+    apikey: project.service_role_key,
+    Authorization: `Bearer ${project.service_role_key}`,
+  })
+  let broadcast: any = { attempted: false, status: 'skipped' }
+  if (body.broadcast === true) {
+    try {
+      const res = await fetch(`${project.site_url}/realtime/v1/api/broadcast`, {
+        method: 'POST',
+        headers: {
+          apikey: project.service_role_key,
+          Authorization: `Bearer ${project.service_role_key}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: [{ topic: channel, event: body.event ?? 'supanow_debug', payload }],
+        }),
+      })
+      broadcast = { attempted: true, http_status: res.status, ok: res.ok, body: await res.json().catch(() => null) }
+    } catch (err: any) {
+      broadcast = { attempted: true, ok: false, error: err.message }
+    }
+  }
+  const result = {
+    health,
+    broadcast,
+    client: {
+      url: `${project.site_url}/realtime/v1`,
+      topic: channel,
+      modes: ['presence', 'broadcast', 'postgres_changes'],
+    },
+  }
+  await pool.query(
+    `INSERT INTO realtime_debug_events(project_id, event_type, channel, payload, result, created_by)
+     VALUES($1, $2, $3, $4, $5, $6)`,
+    [project.id, body.event ?? 'supanow_debug', channel, JSON.stringify(payload), JSON.stringify(result), userId]
+  )
+  await auditEvent(project.id, userId, 'realtime.debug.ran', { channel, broadcast: broadcast.attempted }, 'realtime', channel)
+  return c.json(result)
+})
+
 // ─── GET /platform/projects/:ref/connection-string ────────────────────────────
 app.get('/projects/:ref/connection-string', async (c) => {
   const userId = c.get('userId')
@@ -1576,6 +2058,24 @@ function safeJson(text: string | null) {
 
 function sqlLiteral(value: string) {
   return `'${value.replace(/'/g, "''")}'`
+}
+
+function sqlIdent(value: string) {
+  return `"${value.replace(/"/g, '""')}"`
+}
+
+function shellQuote(value: unknown) {
+  return `'${String(value ?? '').replace(/'/g, `'\\''`)}'`
+}
+
+function queryFromOptions(options: Record<string, unknown>) {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(options)) {
+    if (value === undefined || value === null || value === '') continue
+    params.set(key, String(value))
+  }
+  const query = params.toString()
+  return query ? `?${query}` : ''
 }
 
 // ─── Buckets ──────────────────────────────────────────────────────────────────
@@ -1853,6 +2353,184 @@ app.get('/storage/:ref/buckets/:id/policies', async (c) => {
       and (qual ilike '%' || ${sqlLiteral(id)} || '%' or with_check ilike '%' || ${sqlLiteral(id)} || '%')`
   const data = await fetchPgMetaQuery(creds.site_url, creds.service_role_key, sql)
   return c.json(data?.[0]?.policies ?? [])
+})
+
+app.post('/storage/:ref/buckets/:id/policies', async (c) => {
+  const userId = c.get('userId')
+  const { ref, id } = c.req.param()
+  const creds = await getProjectStorageCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found' }, 404)
+  const body = await c.req.json()
+  const template = body.template ?? 'authenticated-read'
+  const policyName = body.name ?? `${id}_${template}`.replace(/[^a-zA-Z0-9_]/g, '_')
+  const templates: Record<string, string> = {
+    'authenticated-read': `DROP POLICY IF EXISTS ${sqlIdent(policyName)} ON storage.objects; CREATE POLICY ${sqlIdent(policyName)} ON storage.objects FOR SELECT TO authenticated USING (bucket_id = ${sqlLiteral(id)});`,
+    'authenticated-upload': `DROP POLICY IF EXISTS ${sqlIdent(policyName)} ON storage.objects; CREATE POLICY ${sqlIdent(policyName)} ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = ${sqlLiteral(id)});`,
+    'user-folder-all': `DROP POLICY IF EXISTS ${sqlIdent(policyName)} ON storage.objects; CREATE POLICY ${sqlIdent(policyName)} ON storage.objects FOR ALL TO authenticated USING (bucket_id = ${sqlLiteral(id)} AND (storage.foldername(name))[1] = auth.uid()::text) WITH CHECK (bucket_id = ${sqlLiteral(id)} AND (storage.foldername(name))[1] = auth.uid()::text);`,
+  }
+  const sql = body.sql ?? templates[template]
+  if (!sql) return c.json({ message: `Unsupported storage policy template: ${template}` }, 400)
+  await fetchPgMetaQuery(creds.site_url, creds.service_role_key, sql)
+  await auditEvent(creds.id, userId, 'storage.policy.created', { bucket_id: id, template, policy_name: policyName }, 'storage_bucket', id)
+  return c.json({ bucket_id: id, policy_name: policyName, template, status: 'created' }, 201)
+})
+
+app.delete('/storage/:ref/buckets/:id/policies/:policy', async (c) => {
+  const userId = c.get('userId')
+  const { ref, id, policy } = c.req.param()
+  const creds = await getProjectStorageCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found' }, 404)
+  await fetchPgMetaQuery(
+    creds.site_url,
+    creds.service_role_key,
+    `DROP POLICY IF EXISTS ${sqlIdent(policy)} ON storage.objects`
+  )
+  await auditEvent(creds.id, userId, 'storage.policy.deleted', { bucket_id: id, policy_name: policy }, 'storage_bucket', id)
+  return c.json({ bucket_id: id, policy_name: policy, status: 'deleted' })
+})
+
+app.get('/storage/:ref/buckets/:id/transforms', async (c) => {
+  const userId = c.get('userId')
+  const { ref, id } = c.req.param()
+  const creds = await getProjectStorageCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found' }, 404)
+  const { rows } = await pool.query(
+    `SELECT bucket_id, name, options, enabled, updated_at
+     FROM storage_transform_presets
+     WHERE project_id=$1 AND bucket_id=$2
+     ORDER BY name`,
+    [creds.id, id]
+  )
+  return c.json(rows)
+})
+
+app.patch('/storage/:ref/buckets/:id/transforms/:name', async (c) => {
+  const userId = c.get('userId')
+  const { ref, id, name } = c.req.param()
+  const creds = await getProjectStorageCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found' }, 404)
+  const body = await c.req.json()
+  const { rows } = await pool.query(
+    `INSERT INTO storage_transform_presets(project_id, bucket_id, name, options, enabled, updated_by)
+     VALUES($1, $2, $3, $4, $5, $6)
+     ON CONFLICT(project_id, bucket_id, name) DO UPDATE SET
+       options=EXCLUDED.options,
+       enabled=EXCLUDED.enabled,
+       updated_by=EXCLUDED.updated_by,
+       updated_at=NOW()
+     RETURNING bucket_id, name, options, enabled, updated_at`,
+    [creds.id, id, name, JSON.stringify(body.options ?? {}), body.enabled ?? true, userId]
+  )
+  await auditEvent(creds.id, userId, 'storage.transform.updated', { bucket_id: id, name }, 'storage_bucket', id)
+  return c.json(rows[0])
+})
+
+app.delete('/storage/:ref/buckets/:id/transforms/:name', async (c) => {
+  const userId = c.get('userId')
+  const { ref, id, name } = c.req.param()
+  const creds = await getProjectStorageCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found' }, 404)
+  await pool.query(
+    'DELETE FROM storage_transform_presets WHERE project_id=$1 AND bucket_id=$2 AND name=$3',
+    [creds.id, id, name]
+  )
+  await auditEvent(creds.id, userId, 'storage.transform.deleted', { bucket_id: id, name }, 'storage_bucket', id)
+  return c.json({ bucket_id: id, name, status: 'deleted' })
+})
+
+app.post('/storage/:ref/buckets/:id/objects/transform-url', async (c) => {
+  const userId = c.get('userId')
+  const { ref, id } = c.req.param()
+  const creds = await getProjectStorageCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found' }, 404)
+  const body = await c.req.json()
+  const path = String(body.path ?? '').replace(/^\/+/, '')
+  if (!path) return c.json({ message: 'path is required' }, 400)
+  let options = body.options ?? {}
+  if (body.preset) {
+    const { rows } = await pool.query(
+      `SELECT options FROM storage_transform_presets
+       WHERE project_id=$1 AND bucket_id=$2 AND name=$3 AND enabled=true`,
+      [creds.id, id, body.preset]
+    )
+    options = { ...(rows[0]?.options ?? {}), ...options }
+  }
+  const authMode = body.public ? 'public' : 'authenticated'
+  const url = `${creds.site_url}/storage/v1/render/image/${authMode}/${encodeURIComponent(id)}/${path}${queryFromOptions(options)}`
+  await auditEvent(creds.id, userId, 'storage.transform_url.generated', { bucket_id: id, path, preset: body.preset ?? null }, 'storage_object')
+  return c.json({ bucket_id: id, path, public: Boolean(body.public), url, options })
+})
+
+app.get('/storage/:ref/buckets/:id/lifecycle-runs', async (c) => {
+  const userId = c.get('userId')
+  const { ref, id } = c.req.param()
+  const creds = await getProjectStorageCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found' }, 404)
+  const { rows } = await pool.query(
+    `SELECT id, bucket_id, status, dry_run, rule, summary, error, created_at
+     FROM storage_lifecycle_runs
+     WHERE project_id=$1 AND bucket_id=$2
+     ORDER BY created_at DESC LIMIT 50`,
+    [creds.id, id]
+  )
+  return c.json(rows)
+})
+
+app.post('/storage/:ref/buckets/:id/lifecycle/run', async (c) => {
+  const userId = c.get('userId')
+  const { ref, id } = c.req.param()
+  const creds = await getProjectStorageCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found' }, 404)
+  const body = await c.req.json().catch(() => ({}))
+  const dryRun = body.dry_run !== false
+  const olderThanDays = Number(body.older_than_days ?? body.delete_after_days ?? 30)
+  const prefix = String(body.prefix ?? '')
+  const limit = Math.min(Number(body.limit ?? 100), 1000)
+  const sql = `
+    select coalesce(jsonb_agg(jsonb_build_object(
+      'name', name,
+      'size', (metadata->>'size')::bigint,
+      'created_at', created_at,
+      'updated_at', updated_at
+    ) order by updated_at asc), '[]'::jsonb) as objects
+    from (
+      select name, metadata, created_at, updated_at
+      from storage.objects
+      where bucket_id = ${sqlLiteral(id)}
+        and updated_at < now() - (${sqlLiteral(String(olderThanDays))} || ' days')::interval
+        and (${sqlLiteral(prefix)} = '' or name like ${sqlLiteral(`${prefix}%`)})
+      order by updated_at asc
+      limit ${limit}
+    ) candidates`
+  const data = await fetchPgMetaQuery(creds.site_url, creds.service_role_key, sql)
+  const objects = data?.[0]?.objects ?? []
+  let deleted = 0
+  if (!dryRun && objects.length > 0) {
+    const prefixes = objects.map((obj: any) => obj.name)
+    const response = await storageProxy(
+      creds.site_url,
+      creds.service_role_key,
+      `object/${id}`,
+      'DELETE',
+      JSON.stringify({ prefixes })
+    )
+    deleted = response.status >= 200 && response.status < 300 ? prefixes.length : 0
+  }
+  const summary = {
+    candidates: objects.length,
+    deleted,
+    older_than_days: olderThanDays,
+    prefix,
+    limit,
+  }
+  const { rows } = await pool.query(
+    `INSERT INTO storage_lifecycle_runs(project_id, bucket_id, status, dry_run, rule, summary, created_by)
+     VALUES($1, $2, 'completed', $3, $4, $5, $6)
+     RETURNING id, bucket_id, status, dry_run, rule, summary, created_at`,
+    [creds.id, id, dryRun, JSON.stringify(body), JSON.stringify(summary), userId]
+  )
+  await auditEvent(creds.id, userId, 'storage.lifecycle.run', summary, 'storage_bucket', id)
+  return c.json({ ...rows[0], objects: dryRun ? objects : undefined })
 })
 
 // ─── Archive (export) ─────────────────────────────────────────────────────────
