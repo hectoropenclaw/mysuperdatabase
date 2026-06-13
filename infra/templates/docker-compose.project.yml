@@ -44,7 +44,8 @@ services:
       - log_min_messages=fatal
     volumes:
       - db-data:/var/lib/postgresql/data
-      - ./db/roles.sql:/docker-entrypoint-initdb.d/init-scripts/99-roles.sql:ro
+      # roles.sql is NOT in initdb.d — provision.sh runs it explicitly as supabase_admin
+      # (postgres user cannot ALTER reserved roles like supabase_storage_admin)
     networks:
       - spn-${PROJECT_REF}
 
@@ -141,7 +142,7 @@ services:
       KONG_DATABASE: "off"
       KONG_DECLARATIVE_CONFIG: /home/kong/kong.yml
       KONG_DNS_ORDER: LAST,A,CNAME
-      KONG_PLUGINS: request-transformer,cors,key-auth,acl,basic-auth
+      KONG_PLUGINS: request-transformer,cors,key-auth,acl,basic-auth,rate-limiting
       KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
       KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
       SUPABASE_ANON_KEY: ${ANON_KEY}

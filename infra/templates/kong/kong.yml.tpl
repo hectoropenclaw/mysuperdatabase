@@ -23,8 +23,8 @@ acls:
 plugins:
   - name: rate-limiting
     config:
-      minute: ${KONG_RATE_LIMIT_PER_MINUTE:-500}
-      hour: ${KONG_RATE_LIMIT_PER_HOUR:-5000}
+      minute: ${KONG_RATE_LIMIT_PER_MINUTE}
+      hour: ${KONG_RATE_LIMIT_PER_HOUR}
       policy: local
       hide_client_headers: false
       fault_tolerant: true

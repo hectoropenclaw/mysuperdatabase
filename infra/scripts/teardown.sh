@@ -1,47 +1,89 @@
 #!/usr/bin/env bash
 # supanow — teardown.sh
-# Stops and removes a project stack.
+# Destroys a provisioned project stack, its volumes, and removes it from the control plane DB.
 #
 # Usage:
-#   ./teardown.sh <project_ref> [--delete-data]
+#   ./teardown.sh <project_ref> [--force]
 #
-# --delete-data  also removes the Docker volume (irreversible!)
+# --force skips the confirmation prompt.
+# Optional env:
+#   CP_DATABASE_URL — control-plane Postgres URL
 
 set -euo pipefail
 
-PROJECT_REF="${1:?Usage: teardown.sh <project_ref> [--delete-data]}"
-DELETE_DATA="${2:-}"
+PROJECT_REF="${1:?Usage: teardown.sh <project_ref> [--force]}"
+FORCE="${2:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 PROJECTS_DIR="$REPO_ROOT/infra/projects"
-COMPOSE_FILE="$PROJECTS_DIR/$PROJECT_REF/docker-compose.yml"
+PROJECT_DIR="$PROJECTS_DIR/$PROJECT_REF"
 
-if [ ! -f "$COMPOSE_FILE" ]; then
-  echo "Error: no compose file found for $PROJECT_REF at $COMPOSE_FILE"
-  exit 1
-fi
+CP_DATABASE_URL="${CP_DATABASE_URL:-postgresql://postgres:6ebdc748fa747997d018a225eb5114a58695fcd8@localhost:5433/supanow_cp}"
 
-echo "→ Stopping stack for $PROJECT_REF..."
-docker compose -f "$COMPOSE_FILE" \
-  --project-name "spn-${PROJECT_REF}" \
-  down 2>&1
-
-if [ "$DELETE_DATA" = "--delete-data" ]; then
-  echo "→ Removing data volume spn-${PROJECT_REF}-db..."
-  docker volume rm "spn-${PROJECT_REF}-db" 2>/dev/null || echo "  volume not found"
-
-  MINIO_ENDPOINT="${MINIO_ENDPOINT:-http://localhost:9000}"
-  MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-minioadmin}"
-  MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-minioadmin}"
-  if command -v mc &>/dev/null; then
-    mc alias set msd "$MINIO_ENDPOINT" "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY" --quiet 2>/dev/null || true
-    mc rb --force "msd/spn-${PROJECT_REF}" 2>/dev/null || echo "  MinIO bucket not found"
-    echo "→ MinIO bucket spn-${PROJECT_REF} removed"
+# ─── Safety confirmation ───────────────────────────────────────────────────────
+if [[ "$FORCE" != "--force" ]]; then
+  echo ""
+  echo "WARNING: This will permanently destroy project '$PROJECT_REF':"
+  echo "  • Stop all containers (spn-${PROJECT_REF}-*)"
+  echo "  • Delete all Docker volumes (DB data, functions, deno cache)"
+  echo "  • Delete project directory: $PROJECT_DIR"
+  echo "  • Mark project as 'deleted' in control plane DB"
+  echo ""
+  read -r -p "Type '$PROJECT_REF' to confirm: " CONFIRM
+  if [[ "$CONFIRM" != "$PROJECT_REF" ]]; then
+    echo "Aborted."
+    exit 0
   fi
-
-  rm -rf "$PROJECTS_DIR/$PROJECT_REF"
-  echo "→ Project directory removed"
 fi
 
-echo "✓ Project $PROJECT_REF torn down"
+# ─── Mark as deleted in control plane DB first (best-effort) ──────────────────
+echo "→ Marking project deleted in control plane DB..."
+docker run --rm --network host postgres:17-alpine \
+  psql "$CP_DATABASE_URL" \
+  -c "UPDATE projects SET status='deleted', updated_at=now() WHERE ref='${PROJECT_REF}'" \
+  2>/dev/null && echo "  ✓ marked deleted" || echo "  [WARN] could not reach control plane DB"
+
+# ─── Stop and remove containers + volumes ────────────────────────────────────
+if [[ -f "$PROJECT_DIR/docker-compose.yml" ]]; then
+  echo "→ Stopping containers for $PROJECT_REF..."
+  docker compose -f "$PROJECT_DIR/docker-compose.yml" \
+    --project-name "spn-${PROJECT_REF}" \
+    down -v --remove-orphans 2>&1 || true
+  echo "  ✓ containers and volumes removed"
+else
+  # No compose file — try to stop containers by name directly
+  echo "  [WARN] $PROJECT_DIR/docker-compose.yml not found — stopping containers by name..."
+  docker ps -a --format '{{.Names}}' \
+    | grep "^spn-${PROJECT_REF}-" \
+    | xargs -r docker rm -f 2>/dev/null || true
+
+  for vol in db functions deno-cache; do
+    docker volume rm "spn-${PROJECT_REF}-${vol}" 2>/dev/null && \
+      echo "  ✓ volume spn-${PROJECT_REF}-${vol} removed" || true
+  done
+fi
+
+# ─── Remove MinIO bucket (best-effort) ────────────────────────────────────────
+MINIO_ENDPOINT="${MINIO_ENDPOINT:-http://localhost:9000}"
+MINIO_ROOT_USER="${MINIO_ROOT_USER:-minioadmin}"
+MINIO_ROOT_PASSWORD="${MINIO_ROOT_PASSWORD:-minioadmin}"
+
+if command -v mc &>/dev/null; then
+  echo "→ Removing MinIO bucket spn-${PROJECT_REF}..."
+  mc alias set spn-root "$MINIO_ENDPOINT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" --quiet 2>/dev/null || true
+  mc rb --force "spn-root/spn-${PROJECT_REF}" 2>/dev/null && \
+    echo "  ✓ bucket removed" || echo "  [WARN] bucket not found or already deleted"
+else
+  echo "  [SKIP] mc not found — bucket spn-${PROJECT_REF} must be deleted manually"
+fi
+
+# ─── Remove project directory ─────────────────────────────────────────────────
+if [[ -d "$PROJECT_DIR" ]]; then
+  echo "→ Removing project directory $PROJECT_DIR..."
+  rm -rf "$PROJECT_DIR"
+  echo "  ✓ directory removed"
+fi
+
+echo ""
+echo "✓ Project $PROJECT_REF torn down."
