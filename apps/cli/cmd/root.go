@@ -17,6 +17,8 @@ var rootCmd = &cobra.Command{
   supanow login
   supanow projects list
   supanow link --project-ref <ref>
+  supanow db bootstrap
+  supanow db push
   supanow functions deploy <slug> --file index.ts
   supanow secrets set MY_KEY=myvalue
 `,

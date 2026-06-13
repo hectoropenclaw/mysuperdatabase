@@ -60,11 +60,11 @@ func (c *Client) do(method, path string, body any) ([]byte, int, error) {
 // ─── Projects ─────────────────────────────────────────────────────────────────
 
 type Project struct {
-	Ref      string `json:"ref"`
-	Name     string `json:"name"`
-	Status   string `json:"status"`
-	SiteURL  string `json:"site_url"`
-	OrgID    string `json:"org_id"`
+	Ref     string `json:"ref"`
+	Name    string `json:"name"`
+	Status  string `json:"status"`
+	SiteURL string `json:"site_url"`
+	OrgID   string `json:"org_id"`
 }
 
 func (c *Client) ListProjects() ([]Project, error) {
@@ -145,6 +145,29 @@ func (c *Client) GetProjectKeys(ref string) (*ProjectKeys, error) {
 	return &keys, json.Unmarshal(data, &keys)
 }
 
+type ProjectConnectionString struct {
+	URI       string `json:"uri"`
+	PoolerURI string `json:"pooler_uri"`
+	Host      string `json:"host"`
+	Port      int    `json:"port"`
+	Database  string `json:"database"`
+	User      string `json:"user"`
+	Password  string `json:"password"`
+	SSLMode   string `json:"sslmode"`
+}
+
+func (c *Client) GetProjectConnectionString(ref string) (*ProjectConnectionString, error) {
+	data, status, err := c.do("GET", "/api/platform/projects/"+ref+"/connection-string", nil)
+	if err != nil {
+		return nil, err
+	}
+	if status != 200 {
+		return nil, fmt.Errorf("API error %d: %s", status, string(data))
+	}
+	var conn ProjectConnectionString
+	return &conn, json.Unmarshal(data, &conn)
+}
+
 // ─── Orgs ─────────────────────────────────────────────────────────────────────
 
 type Org struct {
@@ -193,10 +216,10 @@ func (c *Client) ListFunctions(ref string) ([]Function, error) {
 }
 
 type DeployFunctionInput struct {
-	Slug      string                    `json:"slug"`
-	Name      string                    `json:"name"`
-	VerifyJWT bool                      `json:"verify_jwt"`
-	Files     []struct{ Name string }   `json:"files"`
+	Slug      string                  `json:"slug"`
+	Name      string                  `json:"name"`
+	VerifyJWT bool                    `json:"verify_jwt"`
+	Files     []struct{ Name string } `json:"files"`
 }
 
 func (c *Client) DeployFunction(ref string, slug string, name string, verifyJWT bool, files map[string]string) (*Function, error) {
