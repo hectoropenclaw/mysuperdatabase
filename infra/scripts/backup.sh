@@ -20,6 +20,8 @@ MINIO_ROOT_USER="${MINIO_ROOT_USER:-minioadmin}"
 MINIO_ROOT_PASSWORD="${MINIO_ROOT_PASSWORD:-minioadmin}"
 BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-7}"
 BACKUP_BUCKET="${BACKUP_BUCKET:-spn-backups}"
+MC_CONFIG_DIR="${MC_CONFIG_DIR:-/tmp/supanow-mc}"
+mkdir -p "$MC_CONFIG_DIR"
 
 mc_cmd() {
   if command -v mc >/dev/null 2>&1; then
@@ -27,11 +29,12 @@ mc_cmd() {
   else
     docker run --rm --network host \
       -v /tmp:/tmp \
+      -v "$MC_CONFIG_DIR:/root/.mc" \
       minio/mc "$@"
   fi
 }
 
-mc_cmd alias set backup-root "$MINIO_ENDPOINT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" --quiet 2>/dev/null || true
+mc_cmd alias set backup-root "$MINIO_ENDPOINT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" --quiet >/dev/null 2>&1 || true
 mc_cmd mb "backup-root/${BACKUP_BUCKET}" --quiet 2>/dev/null || true
 
 backup_project() {

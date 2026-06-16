@@ -2,13 +2,17 @@
 // SupaNow P1 ops runner: executes due per-project operational jobs.
 
 import { execFile } from 'node:child_process'
+import fs from 'node:fs'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import pg from 'pg'
 
 const execFileAsync = promisify(execFile)
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
-const root = path.resolve(process.cwd(), '../..')
+const cwdRoot = path.resolve(process.cwd())
+const parentRoot = path.resolve(process.cwd(), '../..')
+const root = process.env.SUPANOW_REPO_ROOT
+  ?? (fs.existsSync(path.join(cwdRoot, 'infra/scripts')) ? cwdRoot : parentRoot)
 const scriptsDir = path.join(root, 'infra/scripts')
 const maxJobs = Number.parseInt(process.env.SUPANOW_OPS_MAX_JOBS ?? '25', 10)
 
@@ -196,6 +200,61 @@ async function runRealtimeMetrics(project) {
   return saved.rows[0]
 }
 
+async function runBackupVerify(project, config) {
+  const args = [project.ref]
+  if (config?.backup_key) args.push(config.backup_key)
+  let result
+  try {
+    const { stdout } = await execFileAsync(
+      path.join(scriptsDir, 'verify-backup.sh'),
+      args,
+      { maxBuffer: 1024 * 1024 }
+    )
+    result = JSON.parse(stdout)
+  } catch (err) {
+    result = err.stdout ? JSON.parse(err.stdout) : {
+      status: 'failed',
+      backup_key: config?.backup_key ?? null,
+      error: err.message,
+    }
+  }
+  await pool.query(
+    `INSERT INTO project_backup_verifications(project_id, backup_key, status, size_bytes, error, metadata)
+     VALUES($1, $2, $3, $4, $5, $6)`,
+    [
+      project.id,
+      result.backup_key ?? config?.backup_key ?? null,
+      result.status,
+      result.size_bytes ?? null,
+      result.error ?? null,
+      json(result),
+    ]
+  )
+  if (result.backup_key) {
+    await pool.query(
+      `UPDATE project_backups
+       SET verified_at=NOW(),
+           verification_status=$3,
+           verification_error=$4,
+           size_bytes=COALESCE(size_bytes, $5),
+           metadata=metadata || $6::jsonb
+       WHERE project_id=$1 AND backup_key=$2`,
+      [
+        project.id,
+        result.backup_key,
+        result.status === 'verified' ? 'verified' : 'failed',
+        result.error ?? null,
+        result.size_bytes ?? null,
+        json({ last_verification: result }),
+      ]
+    )
+  }
+  if (result.status !== 'verified') {
+    throw new Error(result.error ?? 'backup verification failed')
+  }
+  return result
+}
+
 async function ensureSchedules() {
   await pool.query(`
     INSERT INTO project_job_schedules(project_id, job_type, interval_minutes, config)
@@ -207,7 +266,8 @@ async function ensureSchedules() {
         ('usage_collect', 60, '{}'::jsonb),
         ('advisor_run', 1440, '{}'::jsonb),
         ('log_collect', 15, jsonb_build_object('since_minutes', 20)),
-        ('realtime_metrics', 60, '{}'::jsonb)
+        ('realtime_metrics', 60, '{}'::jsonb),
+        ('backup_verify', 1440, '{}'::jsonb)
     ) defaults(job_type, interval_minutes, config)
     WHERE status='active'
     ON CONFLICT(project_id, job_type) DO NOTHING`)
@@ -241,6 +301,7 @@ async function main() {
       else if (schedule.job_type === 'advisor_run') summary = await runAdvisor(project)
       else if (schedule.job_type === 'log_collect') summary = await runLogCollect(project, schedule.config)
       else if (schedule.job_type === 'realtime_metrics') summary = await runRealtimeMetrics(project)
+      else if (schedule.job_type === 'backup_verify') summary = await runBackupVerify(project, schedule.config)
       else summary = { skipped: true, reason: 'unknown job type' }
 
       await recordRun(schedule, 'completed', summary)

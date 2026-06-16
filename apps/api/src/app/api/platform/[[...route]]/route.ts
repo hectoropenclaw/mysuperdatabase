@@ -1745,7 +1745,9 @@ app.get('/projects/:ref/backups', async (c) => {
   const project = await getProjectKongCreds(ref, userId)
   if (!project) return c.json({ message: 'Not found' }, 404)
   const { rows } = await pool.query(
-    `SELECT id, status, backup_key, size_bytes, restore_of_backup_id, error, created_at, completed_at
+    `SELECT id, status, backup_key, size_bytes, restore_of_backup_id, error,
+            verified_at, verification_status, verification_error, metadata,
+            created_at, completed_at
      FROM project_backups WHERE project_id=$1 ORDER BY created_at DESC LIMIT 50`,
     [project.id]
   )
@@ -1781,6 +1783,94 @@ app.post('/projects/:ref/backups', async (c) => {
       ).catch(() => {})
     })
   return c.json({ id: backupId, status: 'running' }, 202)
+})
+
+app.get('/projects/:ref/backup-verifications', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const limit = parsePositiveInt(c.req.query('limit'), 50, 100)
+  const { rows } = await pool.query(
+    `SELECT id, backup_key, status, size_bytes, checked_at, error, metadata
+     FROM project_backup_verifications
+     WHERE project_id=$1
+     ORDER BY checked_at DESC
+     LIMIT $2`,
+    [project.id, limit]
+  )
+  return c.json(rows)
+})
+
+app.post('/projects/:ref/backups/verify', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const body = await c.req.json().catch(() => ({}))
+  const backupKey = String(body.backup_key ?? '').trim()
+  const args = backupKey ? shellQuote(backupKey) : ''
+  const { rows } = await pool.query(
+    `INSERT INTO project_operation_runs(project_id, job_type, status, summary)
+     VALUES($1, 'backup_verify', 'running', $2) RETURNING id`,
+    [project.id, JSON.stringify({ backup_key: backupKey || null })]
+  )
+  const runId = rows[0].id
+  execAsync(`bash "${SCRIPTS_DIR}/verify-backup.sh" "${ref}" ${args}`, { maxBuffer: 1024 * 1024 })
+    .then(async ({ stdout }) => {
+      const result = JSON.parse(stdout)
+      await pool.query(
+        `INSERT INTO project_backup_verifications(project_id, backup_key, status, size_bytes, error, metadata)
+         VALUES($1, $2, $3, $4, $5, $6)`,
+        [
+          project.id,
+          result.backup_key ?? (backupKey || null),
+          result.status,
+          result.size_bytes ?? null,
+          result.error ?? null,
+          JSON.stringify(result),
+        ]
+      )
+      if (result.backup_key) {
+        await pool.query(
+          `UPDATE project_backups
+           SET verified_at=NOW(),
+               verification_status=$3,
+               verification_error=$4,
+               size_bytes=COALESCE(size_bytes, $5),
+               metadata=metadata || $6::jsonb
+           WHERE project_id=$1 AND backup_key=$2`,
+          [
+            project.id,
+            result.backup_key,
+            result.status === 'verified' ? 'verified' : 'failed',
+            result.error ?? null,
+            result.size_bytes ?? null,
+            JSON.stringify({ last_verification: result }),
+          ]
+        )
+      }
+      await pool.query(
+        `UPDATE project_operation_runs
+         SET status=$1, summary=$2, completed_at=NOW()
+         WHERE id=$3`,
+        [result.status === 'verified' ? 'completed' : 'failed', JSON.stringify(result), runId]
+      )
+    })
+    .catch(async (err) => {
+      const result = { status: 'failed', backup_key: backupKey || null, error: err.message }
+      await pool.query(
+        `INSERT INTO project_backup_verifications(project_id, backup_key, status, error, metadata)
+         VALUES($1, $2, 'failed', $3, $4)`,
+        [project.id, backupKey || null, err.message, JSON.stringify(result)]
+      ).catch(() => {})
+      await pool.query(
+        `UPDATE project_operation_runs SET status='failed', error=$1, completed_at=NOW() WHERE id=$2`,
+        [err.message, runId]
+      ).catch(() => {})
+    })
+  await auditEvent(project.id, userId, 'project.backup_verification.queued', { run_id: runId, backup_key: backupKey || null }, 'project_backup', backupKey || ref)
+  return c.json({ id: runId, status: 'running', backup_key: backupKey || null }, 202)
 })
 
 app.post('/projects/:ref/restores', async (c) => {

@@ -14,6 +14,8 @@ MINIO_ENDPOINT="${MINIO_ENDPOINT:-http://localhost:9000}"
 MINIO_ROOT_USER="${MINIO_ROOT_USER:-minioadmin}"
 MINIO_ROOT_PASSWORD="${MINIO_ROOT_PASSWORD:-minioadmin}"
 BACKUP_BUCKET="${BACKUP_BUCKET:-spn-backups}"
+MC_CONFIG_DIR="${MC_CONFIG_DIR:-/tmp/supanow-mc}"
+mkdir -p "$MC_CONFIG_DIR"
 
 CONTAINER="spn-${PROJECT_REF}-db-1"
 TMP_FILE="/tmp/restore-${PROJECT_REF}-$(date -u +%Y%m%dT%H%M%SZ).sql.gz"
@@ -24,6 +26,7 @@ mc_cmd() {
   else
     docker run --rm --network host \
       -v /tmp:/tmp \
+      -v "$MC_CONFIG_DIR:/root/.mc" \
       minio/mc "$@"
   fi
 }
@@ -33,7 +36,7 @@ if ! docker inspect "$CONTAINER" --format "{{.State.Running}}" 2>/dev/null | gre
   exit 1
 fi
 
-mc_cmd alias set backup-root "$MINIO_ENDPOINT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" --quiet 2>/dev/null || true
+mc_cmd alias set backup-root "$MINIO_ENDPOINT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" --quiet >/dev/null 2>&1 || true
 mc_cmd cp "backup-root/${BACKUP_BUCKET}/${BACKUP_KEY}" "$TMP_FILE" --quiet
 
 gunzip -c "$TMP_FILE" | docker exec -i "$CONTAINER" psql -U postgres -h 127.0.0.1 postgres
