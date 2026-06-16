@@ -18,13 +18,23 @@ BACKUP_BUCKET="${BACKUP_BUCKET:-spn-backups}"
 CONTAINER="spn-${PROJECT_REF}-db-1"
 TMP_FILE="/tmp/restore-${PROJECT_REF}-$(date -u +%Y%m%dT%H%M%SZ).sql.gz"
 
+mc_cmd() {
+  if command -v mc >/dev/null 2>&1; then
+    mc "$@"
+  else
+    docker run --rm --network host \
+      -v /tmp:/tmp \
+      minio/mc "$@"
+  fi
+}
+
 if ! docker inspect "$CONTAINER" --format "{{.State.Running}}" 2>/dev/null | grep -q true; then
   echo "DB container $CONTAINER is not running" >&2
   exit 1
 fi
 
-mc alias set backup-root "$MINIO_ENDPOINT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" --quiet 2>/dev/null || true
-mc cp "backup-root/${BACKUP_BUCKET}/${BACKUP_KEY}" "$TMP_FILE" --quiet
+mc_cmd alias set backup-root "$MINIO_ENDPOINT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" --quiet 2>/dev/null || true
+mc_cmd cp "backup-root/${BACKUP_BUCKET}/${BACKUP_KEY}" "$TMP_FILE" --quiet
 
 gunzip -c "$TMP_FILE" | docker exec -i "$CONTAINER" psql -U postgres -h 127.0.0.1 postgres
 rm -f "$TMP_FILE"

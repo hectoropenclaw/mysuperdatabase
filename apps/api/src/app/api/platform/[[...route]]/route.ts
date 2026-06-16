@@ -26,6 +26,16 @@ const COMPONENT_VERSIONS = {
   edgeRuntime: 'supabase/edge-runtime:v1.74.0',
   kong: 'kong/kong:3.9.1',
 }
+const COMPONENT_SERVICES: Record<string, string> = {
+  postgres: 'db',
+  postgrest: 'rest',
+  gotrue: 'auth',
+  realtime: 'realtime',
+  storage: 'storage',
+  pgMeta: 'meta',
+  edgeRuntime: 'edge-runtime',
+  kong: 'kong',
+}
 const AUTH_PROVIDER_KEYS: Record<string, { enabled: string; clientId: string; secret: string; extra?: string[] }> = {
   github: { enabled: 'EXTERNAL_GITHUB_ENABLED', clientId: 'EXTERNAL_GITHUB_CLIENT_ID', secret: 'EXTERNAL_GITHUB_SECRET' },
   google: { enabled: 'EXTERNAL_GOOGLE_ENABLED', clientId: 'EXTERNAL_GOOGLE_CLIENT_ID', secret: 'EXTERNAL_GOOGLE_SECRET' },
@@ -1613,12 +1623,159 @@ app.post('/projects/:ref/upgrade-plan', async (c) => {
     : Object.keys(COMPONENT_VERSIONS)
   const plan = components.map((component: string) => ({
     component,
-    action: 'restart-after-image-update',
+    service: COMPONENT_SERVICES[component] ?? component,
+    target_version: (COMPONENT_VERSIONS as any)[component] ?? null,
+    action: component === 'postgres' ? 'backup-pull-up-health-check' : 'pull-up-health-check',
     requires_backup: ['postgres', 'storage'].includes(component),
     expected_downtime: component === 'postgres' ? 'short' : 'rolling',
   }))
   await auditEvent(project.id, userId, 'project.upgrade_plan.generated', { components }, 'project', ref)
   return c.json({ project_ref: ref, plan })
+})
+
+app.get('/projects/:ref/upgrade-runs', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const { rows } = await pool.query(
+    `SELECT id, status, components, from_versions, to_versions, plan,
+            backup_id, backup_key, error, created_at, started_at, completed_at
+     FROM project_upgrade_runs
+     WHERE project_id=$1
+     ORDER BY created_at DESC LIMIT 50`,
+    [project.id]
+  )
+  return c.json(rows)
+})
+
+app.get('/projects/:ref/upgrade-runs/:runId', async (c) => {
+  const userId = c.get('userId')
+  const { ref, runId } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const { rows } = await pool.query(
+    `SELECT id, status, components, from_versions, to_versions, plan,
+            backup_id, backup_key, log, error, created_at, started_at, completed_at
+     FROM project_upgrade_runs
+     WHERE id=$1 AND project_id=$2`,
+    [runId, project.id]
+  )
+  if (!rows.length) return c.json({ message: 'Upgrade run not found' }, 404)
+  return c.json(rows[0])
+})
+
+app.post('/projects/:ref/upgrades', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const body = await c.req.json().catch(() => ({}))
+  const requested = Array.isArray(body.components) && body.components.length
+    ? body.components
+    : Object.keys(COMPONENT_VERSIONS)
+  const components = requested.filter((component: string) => COMPONENT_SERVICES[component] || component === 'all')
+  if (!components.length) return c.json({ message: 'No valid components requested' }, 400)
+
+  const { rows: versionRows } = await pool.query('SELECT component_versions FROM projects WHERE id=$1', [project.id])
+  const fromVersions = { ...COMPONENT_VERSIONS, ...(versionRows[0]?.component_versions ?? {}) }
+  const toVersions = body.to_versions ?? COMPONENT_VERSIONS
+  const plan = components.map((component: string) => ({
+    component,
+    service: COMPONENT_SERVICES[component] ?? component,
+    from_version: (fromVersions as any)[component] ?? null,
+    to_version: (toVersions as any)[component] ?? null,
+    requires_backup: body.skip_backup === true ? false : ['postgres', 'storage', 'all'].includes(component),
+    health_check: `${project.site_url}/rest/v1/`,
+  }))
+
+  const { rows } = await pool.query(
+    `INSERT INTO project_upgrade_runs
+       (project_id, status, components, from_versions, to_versions, plan, created_by)
+     VALUES($1, 'queued', $2, $3, $4, $5, $6)
+     RETURNING id, status, components, created_at`,
+    [project.id, components, JSON.stringify(fromVersions), JSON.stringify(toVersions), JSON.stringify(plan), userId]
+  )
+  const runId = rows[0].id
+  await auditEvent(project.id, userId, 'project.upgrade.queued', { run_id: runId, components }, 'project_upgrade', runId)
+
+  const services = components.includes('all') ? [] : components.map((component: string) => COMPONENT_SERVICES[component] ?? component)
+  const serviceArgs = services.map((service: string) => shellQuote(service)).join(' ')
+  const skipBackup = body.skip_backup === true ? '1' : '0'
+  const rollbackOnFail = body.rollback_on_fail === false ? '0' : '1'
+  const command = `SKIP_BACKUP=${skipBackup} ROLLBACK_ON_FAIL=${rollbackOnFail} HEALTH_URL=${shellQuote(`${project.site_url}/rest/v1/`)} bash "${SCRIPTS_DIR}/upgrade-project.sh" "${ref}" ${serviceArgs}`
+
+  await pool.query('UPDATE project_upgrade_runs SET status=$1, started_at=NOW() WHERE id=$2', ['running', runId])
+  execAsync(command, { maxBuffer: 1024 * 1024 * 8 })
+    .then(async ({ stdout, stderr }) => {
+      const log = [stdout, stderr].filter(Boolean).join('\n')
+      const match = log.match(/backed up →\s+([^\s]+)/)
+      const backupKey = match?.[1]?.replace(/^spn-backups\//, '') ?? null
+      await pool.query(
+        `UPDATE project_upgrade_runs
+         SET status='completed', backup_key=$1, log=$2, completed_at=NOW()
+         WHERE id=$3`,
+        [backupKey, log.slice(-50000), runId]
+      )
+      await pool.query(
+        `UPDATE projects SET component_versions=$1, updated_at=NOW() WHERE id=$2`,
+        [JSON.stringify(toVersions), project.id]
+      )
+      await auditEvent(project.id, userId, 'project.upgrade.completed', { run_id: runId, backup_key: backupKey }, 'project_upgrade', runId)
+    })
+    .catch(async (err) => {
+      const log = [err.stdout, err.stderr].filter(Boolean).join('\n')
+      await pool.query(
+        `UPDATE project_upgrade_runs
+         SET status='failed', log=$1, error=$2, completed_at=NOW()
+         WHERE id=$3`,
+        [log.slice(-50000), err.message, runId]
+      ).catch(() => {})
+      await auditEvent(project.id, userId, 'project.upgrade.failed', { run_id: runId, error: err.message }, 'project_upgrade', runId)
+    })
+
+  return c.json({ id: runId, status: 'running', components, plan }, 202)
+})
+
+app.post('/projects/:ref/upgrade-runs/:runId/rollback', async (c) => {
+  const userId = c.get('userId')
+  const { ref, runId } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const { rows } = await pool.query(
+    `SELECT id, components, from_versions, backup_key FROM project_upgrade_runs
+     WHERE id=$1 AND project_id=$2`,
+    [runId, project.id]
+  )
+  if (!rows.length) return c.json({ message: 'Upgrade run not found' }, 404)
+  const run = rows[0]
+  const services = (run.components ?? []).includes('all')
+    ? []
+    : (run.components ?? []).map((component: string) => COMPONENT_SERVICES[component] ?? component)
+  const serviceArgs = services.map((service: string) => shellQuote(service)).join(' ')
+  const restoreCommand = run.backup_key
+    ? `bash "${SCRIPTS_DIR}/restore.sh" "${ref}" "${run.backup_key}" && `
+    : ''
+  execAsync(`${restoreCommand}bash "${SCRIPTS_DIR}/restart-project.sh" "${ref}" ${serviceArgs}`, { maxBuffer: 1024 * 1024 * 8 })
+    .then(async ({ stdout, stderr }) => {
+      const log = [stdout, stderr].filter(Boolean).join('\n')
+      await pool.query(
+        `UPDATE project_upgrade_runs
+         SET status='rolled_back', log=COALESCE(log, '') || $1, completed_at=NOW()
+         WHERE id=$2`,
+        [`\n\n== rollback ==\n${log.slice(-20000)}`, runId]
+      )
+      await pool.query('UPDATE projects SET component_versions=$1, updated_at=NOW() WHERE id=$2', [JSON.stringify(run.from_versions), project.id])
+      await auditEvent(project.id, userId, 'project.upgrade.rolled_back', { run_id: runId, restored_backup: Boolean(run.backup_key) }, 'project_upgrade', runId)
+    })
+    .catch(async (err) => {
+      await pool.query(
+        `UPDATE project_upgrade_runs SET error=$1, completed_at=NOW() WHERE id=$2`,
+        [`rollback failed: ${err.message}`, runId]
+      ).catch(() => {})
+      await auditEvent(project.id, userId, 'project.upgrade.rollback_failed', { run_id: runId, error: err.message }, 'project_upgrade', runId)
+    })
+  return c.json({ id: runId, status: 'rollback_running', restores_backup: Boolean(run.backup_key) }, 202)
 })
 
 app.get('/projects/:ref/quotas', async (c) => {

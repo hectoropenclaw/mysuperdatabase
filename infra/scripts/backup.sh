@@ -21,20 +21,42 @@ MINIO_ROOT_PASSWORD="${MINIO_ROOT_PASSWORD:-minioadmin}"
 BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-7}"
 BACKUP_BUCKET="${BACKUP_BUCKET:-spn-backups}"
 
-mc alias set backup-root "$MINIO_ENDPOINT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" --quiet 2>/dev/null || true
-mc mb "backup-root/${BACKUP_BUCKET}" --quiet 2>/dev/null || true
+mc_cmd() {
+  if command -v mc >/dev/null 2>&1; then
+    mc "$@"
+  else
+    docker run --rm --network host \
+      -v /tmp:/tmp \
+      minio/mc "$@"
+  fi
+}
+
+mc_cmd alias set backup-root "$MINIO_ENDPOINT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" --quiet 2>/dev/null || true
+mc_cmd mb "backup-root/${BACKUP_BUCKET}" --quiet 2>/dev/null || true
 
 backup_project() {
   local ref="$1"
   local keys_file="$PROJECTS_DIR/$ref/keys.json"
-
-  if [[ ! -f "$keys_file" ]]; then
-    echo "[WARN] No keys.json for $ref — skipping"
-    return
-  fi
+  local compose_file="$PROJECTS_DIR/$ref/docker-compose.yml"
 
   local db_password
-  db_password=$(python3 -c "import json,sys; d=json.load(open('$keys_file')); print(d['db_password'])")
+  if [[ -f "$keys_file" ]]; then
+    db_password=$(python3 -c "import json,sys; d=json.load(open('$keys_file')); print(d['db_password'])")
+  elif [[ -f "$compose_file" ]]; then
+    db_password=$(python3 - "$compose_file" <<'PY'
+import re
+import sys
+text = open(sys.argv[1], encoding="utf-8").read()
+match = re.search(r"POSTGRES_PASSWORD:\s*['\"]?([^'\"\n ]+)", text)
+if not match:
+    raise SystemExit("POSTGRES_PASSWORD not found in docker-compose.yml")
+print(match.group(1))
+PY
+)
+  else
+    echo "[ERROR] No keys.json or docker-compose.yml for $ref" >&2
+    return 1
+  fi
 
   local timestamp
   timestamp=$(date -u +%Y%m%dT%H%M%SZ)
@@ -55,7 +77,7 @@ backup_project() {
     | gzip > "$dump_file"
 
   # Upload to MinIO
-  mc cp "$dump_file" "backup-root/${BACKUP_BUCKET}/${ref}/${timestamp}.sql.gz" --quiet
+  mc_cmd cp "$dump_file" "backup-root/${BACKUP_BUCKET}/${ref}/${timestamp}.sql.gz" --quiet
   rm -f "$dump_file"
 
   # Apply retention — delete backups older than BACKUP_RETENTION_DAYS
@@ -63,7 +85,7 @@ backup_project() {
   cutoff=$(date -u -d "-${BACKUP_RETENTION_DAYS} days" +%Y-%m-%dT%H:%M:%S 2>/dev/null \
     || date -u -v"-${BACKUP_RETENTION_DAYS}d" +%Y-%m-%dT%H:%M:%S)  # macOS fallback
 
-  mc find "backup-root/${BACKUP_BUCKET}/${ref}/" \
+  mc_cmd find "backup-root/${BACKUP_BUCKET}/${ref}/" \
     --older-than "${BACKUP_RETENTION_DAYS}d" \
     --exec "mc rm {}" --quiet 2>/dev/null || true
 
