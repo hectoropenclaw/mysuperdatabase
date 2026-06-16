@@ -1856,6 +1856,151 @@ app.get('/projects/:ref/audit', async (c) => {
   return c.json(rows)
 })
 
+app.get('/projects/:ref/operations', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const limit = parsePositiveInt(c.req.query('limit'), 100, 500)
+  const { rows } = await pool.query(
+    `SELECT id, job_type, status, summary, error, started_at, completed_at
+     FROM project_operation_runs
+     WHERE project_id=$1
+     ORDER BY started_at DESC
+     LIMIT $2`,
+    [project.id, limit]
+  )
+  return c.json(rows)
+})
+
+app.get('/projects/:ref/jobs', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const { rows } = await pool.query(
+    `SELECT job_type, enabled, interval_minutes, config, last_run_at, next_run_at, updated_at
+     FROM project_job_schedules
+     WHERE project_id=$1
+     ORDER BY job_type`,
+    [project.id]
+  )
+  return c.json(rows)
+})
+
+app.patch('/projects/:ref/jobs/:jobType', async (c) => {
+  const userId = c.get('userId')
+  const { ref, jobType } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const body = await c.req.json()
+  const { rows } = await pool.query(
+    `INSERT INTO project_job_schedules(project_id, job_type, enabled, interval_minutes, config, next_run_at)
+     VALUES($1, $2, $3, $4, $5, NOW())
+     ON CONFLICT(project_id, job_type) DO UPDATE SET
+       enabled=COALESCE(EXCLUDED.enabled, project_job_schedules.enabled),
+       interval_minutes=COALESCE(EXCLUDED.interval_minutes, project_job_schedules.interval_minutes),
+       config=project_job_schedules.config || EXCLUDED.config,
+       next_run_at=CASE WHEN $6::boolean THEN NOW() ELSE project_job_schedules.next_run_at END,
+       updated_at=NOW()
+     RETURNING job_type, enabled, interval_minutes, config, last_run_at, next_run_at, updated_at`,
+    [
+      project.id,
+      jobType,
+      body.enabled ?? true,
+      body.interval_minutes ?? 60,
+      JSON.stringify(body.config ?? {}),
+      Boolean(body.run_now),
+    ]
+  )
+  await auditEvent(project.id, userId, 'project.job_schedule.updated', { job_type: jobType, keys: Object.keys(body) }, 'project_job', jobType)
+  return c.json(rows[0])
+})
+
+app.post('/projects/:ref/logs/collect', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const body = await c.req.json().catch(() => ({}))
+  const sinceMinutes = parsePositiveInt(String(body.since_minutes ?? '20'), 20, 1440)
+  const { rows } = await pool.query(
+    `INSERT INTO project_operation_runs(project_id, job_type, status)
+     VALUES($1, 'log_collect', 'running') RETURNING id`,
+    [project.id]
+  )
+  const runId = rows[0].id
+  execAsync(`bash "${SCRIPTS_DIR}/collect-logs.sh" "${ref}" "${sinceMinutes}"`, { maxBuffer: 1024 * 1024 * 8 })
+    .then(async ({ stdout, stderr }) => {
+      const entries = stdout.split('\n').filter(Boolean).map((line) => JSON.parse(line))
+      for (const entry of entries) {
+        await pool.query(
+          `INSERT INTO project_log_entries(project_id, service, level, message, metadata, fingerprint, occurred_at)
+           VALUES($1, $2, $3, $4, $5, $6, $7)
+           ON CONFLICT(project_id, fingerprint) DO NOTHING`,
+          [
+            project.id,
+            entry.service,
+            entry.level,
+            entry.message,
+            JSON.stringify(entry.metadata ?? {}),
+            entry.fingerprint,
+            entry.occurred_at,
+          ]
+        )
+      }
+      await pool.query(
+        `UPDATE project_operation_runs
+         SET status='completed', summary=$1, log=$2, completed_at=NOW()
+         WHERE id=$3`,
+        [JSON.stringify({ inserted_or_seen: entries.length }), stderr.slice(-20000), runId]
+      )
+    })
+    .catch(async (err) => {
+      await pool.query(
+        `UPDATE project_operation_runs SET status='failed', error=$1, log=$2, completed_at=NOW() WHERE id=$3`,
+        [err.message, [err.stdout, err.stderr].filter(Boolean).join('\n').slice(-20000), runId]
+      ).catch(() => {})
+    })
+  await auditEvent(project.id, userId, 'project.logs.collect_queued', { run_id: runId, since_minutes: sinceMinutes }, 'project_logs', ref)
+  return c.json({ id: runId, status: 'running' }, 202)
+})
+
+app.get('/projects/:ref/logs', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const limit = parsePositiveInt(c.req.query('limit'), 100, 500)
+  const service = c.req.query('service')
+  const level = c.req.query('level')
+  const q = c.req.query('q')
+  const values: any[] = [project.id]
+  const where = ['project_id=$1']
+  if (service) {
+    values.push(service)
+    where.push(`service=$${values.length}`)
+  }
+  if (level) {
+    values.push(level)
+    where.push(`level=$${values.length}`)
+  }
+  if (q) {
+    values.push(`%${q}%`)
+    where.push(`message ILIKE $${values.length}`)
+  }
+  values.push(limit)
+  const { rows } = await pool.query(
+    `SELECT id, service, level, message, metadata, occurred_at, collected_at
+     FROM project_log_entries
+     WHERE ${where.join(' AND ')}
+     ORDER BY occurred_at DESC
+     LIMIT $${values.length}`,
+    values
+  )
+  return c.json(rows)
+})
+
 app.get('/realtime/:ref/settings', async (c) => {
   const userId = c.get('userId')
   const { ref } = c.req.param()
@@ -2233,6 +2378,12 @@ function queryFromOptions(options: Record<string, unknown>) {
   }
   const query = params.toString()
   return query ? `?${query}` : ''
+}
+
+function parsePositiveInt(value: string | undefined, fallback: number, max = 500) {
+  const parsed = Number.parseInt(value ?? '', 10)
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback
+  return Math.min(parsed, max)
 }
 
 // ─── Buckets ──────────────────────────────────────────────────────────────────

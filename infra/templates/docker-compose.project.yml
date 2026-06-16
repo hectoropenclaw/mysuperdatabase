@@ -274,11 +274,12 @@ services:
       SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_KEY}
       SUPABASE_DB_URL: postgresql://postgres:${DB_PASSWORD}@db:5432/postgres
       VERIFY_JWT: "false"
+    env_file:
+      - ./secrets.env
     volumes:
       - functions-data:/home/deno/functions
       - deno-cache:/root/.cache/deno
-      - ./secrets.env:/home/deno/secrets.env:ro
-    command: ["start", "--main-service", "/home/deno/functions/main", "--env-file", "/home/deno/secrets.env"]
+    command: ["start", "--main-service", "/home/deno/functions/main"]
     networks:
       - spn-${PROJECT_REF}
 
