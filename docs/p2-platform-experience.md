@@ -47,6 +47,25 @@ Realtime debugging:
 
 ## Verification
 
+If a tenant already exists on disk/Docker but the control-plane DB does not list
+it yet, import it first:
+
+```sh
+infra/scripts/import-project.sh whatsclear
+```
+
+From the API, owners/admins can import an existing stack into an org:
+
+```http
+POST /api/platform/projects/import
+Content-Type: application/json
+
+{
+  "ref": "whatsclear",
+  "organization_id": "..."
+}
+```
+
 Run the standard tenant smoke:
 
 ```sh

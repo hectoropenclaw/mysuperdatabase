@@ -54,6 +54,21 @@ export async function provisionProject(ref: string): Promise<ProvisionResult> {
   }
 }
 
+export async function importExistingProject(ref: string, orgId: string): Promise<void> {
+  await execFileAsync(
+    path.join(INFRA_SCRIPTS, 'import-project.sh'),
+    [ref],
+    {
+      env: {
+        ...process.env,
+        PATH: process.env.PATH,
+        ORG_ID: orgId,
+      },
+      timeout: 2 * 60 * 1000,
+    }
+  )
+}
+
 export async function teardownProject(ref: string, deleteData = false): Promise<void> {
   const args = deleteData ? [ref, '--delete-data'] : [ref]
   await execFileAsync(path.join(INFRA_SCRIPTS, 'teardown.sh'), args, {

@@ -245,6 +245,37 @@ app.get('/projects', async (c) => {
   })
 })
 
+// ─── POST /platform/projects/import ──────────────────────────────────────────
+app.post('/projects/import', async (c) => {
+  const userId = c.get('userId')
+  const body = await c.req.json().catch(() => ({}))
+  const ref = String(body.ref ?? '').trim()
+  const organizationId = body.organization_id ?? body.org_id
+  if (!REF_RE.test(ref) || !organizationId) {
+    return c.json({ message: 'ref and organization_id are required' }, 400)
+  }
+
+  const { rows: membership } = await pool.query(
+    'SELECT role FROM org_members WHERE org_id=$1 AND user_id=$2',
+    [organizationId, userId]
+  )
+  if (!membership.length || !['owner', 'admin'].includes(membership[0].role)) {
+    return c.json({ message: 'Forbidden' }, 403)
+  }
+
+  const { importExistingProject } = await import('@/lib/provision')
+  await importExistingProject(ref, organizationId)
+  const { rows } = await pool.query(
+    `SELECT p.*, o.slug as org_slug FROM projects p
+     JOIN organizations o ON o.id=p.org_id
+     WHERE p.ref=$1 AND p.org_id=$2 AND p.status != 'deleted'`,
+    [ref, organizationId]
+  )
+  if (!rows.length) return c.json({ message: 'Import did not create project metadata' }, 500)
+  await auditEvent(rows[0].id, userId, 'project.imported', { ref }, 'project', ref)
+  return c.json(projectToStudioShape(rows[0]), 201)
+})
+
 // ─── GET /platform/projects/:ref ──────────────────────────────────────────────
 app.get('/projects/:ref', async (c) => {
   const userId = c.get('userId')

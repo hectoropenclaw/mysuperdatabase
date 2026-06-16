@@ -3,7 +3,7 @@ import { handle } from 'hono/vercel'
 import { z } from 'zod'
 import { auth } from '@/lib/auth'
 import pool from '@/db/client'
-import { generateRef, provisionProject, teardownProject } from '@/lib/provision'
+import { generateRef, importExistingProject, provisionProject, teardownProject } from '@/lib/provision'
 
 export const runtime = 'nodejs'
 
@@ -94,6 +94,39 @@ app.post('/projects', async (c) => {
     })
 
   return c.json({ project }, 201)
+})
+
+// ─── POST /projects/import ───────────────────────────────────────────────────
+const importProjectSchema = z.object({
+  ref: z.string().regex(/^[a-z0-9]{6,32}$/),
+  org_id: z.string().uuid(),
+})
+
+app.post('/projects/import', async (c) => {
+  const userId = c.get('userId')
+  const body = await c.req.json()
+  const parsed = importProjectSchema.safeParse(body)
+  if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400)
+
+  const { ref, org_id } = parsed.data
+  const { rows: membership } = await pool.query(
+    'SELECT role FROM org_members WHERE org_id=$1 AND user_id=$2',
+    [org_id, userId]
+  )
+  if (!membership.length || !['owner', 'admin'].includes(membership[0].role)) {
+    return c.json({ error: 'Forbidden' }, 403)
+  }
+
+  await importExistingProject(ref, org_id)
+  const { rows } = await pool.query(
+    `SELECT p.* FROM projects p
+     WHERE p.ref=$1 AND p.org_id=$2 AND p.status != 'deleted'`,
+    [ref, org_id]
+  )
+  if (!rows.length) return c.json({ error: 'Import did not create project metadata' }, 500)
+
+  const { db_password, jwt_secret, service_role_key, storage_s3_secret_key, ...safe } = rows[0]
+  return c.json({ project: safe }, 201)
 })
 
 // ─── GET /projects/:ref ──────────────────────────────────────────────────────

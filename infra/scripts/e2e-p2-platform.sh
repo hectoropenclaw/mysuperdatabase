@@ -14,6 +14,10 @@ PROJECT_REF="${1:?Usage: e2e-p2-platform.sh <project_ref>}"
 CONTROL_DB_CONTAINER="${CONTROL_DB_CONTAINER:-spn-cp-db}"
 CONTROL_DB_NAME="${CONTROL_DB_NAME:-supanow_cp}"
 CONTROL_DB_USER="${CONTROL_DB_USER:-postgres}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+COMPOSE_FILE="$REPO_ROOT/infra/projects/$PROJECT_REF/docker-compose.yml"
+HOST_HEADER="${HOST_HEADER:-${PROJECT_REF}.db.hconsulting.app}"
 
 if [[ ! "$PROJECT_REF" =~ ^[a-z0-9]{6,32}$ ]]; then
   echo "[FAIL] Invalid project ref: $PROJECT_REF" >&2
@@ -68,6 +72,14 @@ IFS=$'\t' read -r PROJECT_ID SITE_URL SERVICE_ROLE_KEY ANON_KEY <<<"$PROJECT_ROW
 [[ -n "$SERVICE_ROLE_KEY" ]] || fail "project service_role_key is empty"
 [[ -n "$ANON_KEY" ]] || warn "project anon_key is empty; realtime client config will be degraded"
 
+if [[ -n "${SITE_URL_OVERRIDE:-}" ]]; then
+  EFFECTIVE_SITE_URL="$SITE_URL_OVERRIDE"
+elif [[ -f "$COMPOSE_FILE" ]]; then
+  EFFECTIVE_SITE_URL="https://localhost"
+else
+  EFFECTIVE_SITE_URL="$SITE_URL"
+fi
+
 TEST_NAME="p2-smoke-$(date +%s)"
 QUERY_TEXT="select 1 as p2_smoke"
 QUERY_HASH="$(printf "%s" "$QUERY_TEXT" | sha256sum | awk '{print $1}')"
@@ -107,20 +119,24 @@ record_count="$(psql_at -c "
 [[ "$record_count" == "4" ]] && pass "control-plane P2 records are readable" || fail "expected 4 P2 records, got $record_count"
 
 pg_meta_status="$(curl -k -sS --max-time 15 -o /tmp/supanow-p2-pgmeta.json -w "%{http_code}" \
+  -H "Host: $HOST_HEADER" \
   -H "apikey: $SERVICE_ROLE_KEY" \
   -H "Authorization: Bearer $SERVICE_ROLE_KEY" \
   -H "Content-Type: application/json" \
   --data '{"query":"select 1 as p2_smoke"}' \
-  "$SITE_URL/pg/query" || printf '000')"
+  "$EFFECTIVE_SITE_URL/pg/query" || printf '000')"
 [[ "$pg_meta_status" =~ ^2 ]] && pass "pg-meta SQL query works status=$pg_meta_status" || fail "pg-meta SQL query failed status=$pg_meta_status"
 
-storage_status="$(curl -k -sS --max-time 15 -o /dev/null -w "%{http_code}" "$SITE_URL/storage/v1/status" || printf '000')"
+storage_status="$(curl -k -sS --max-time 15 -o /dev/null -w "%{http_code}" \
+  -H "Host: $HOST_HEADER" \
+  "$EFFECTIVE_SITE_URL/storage/v1/status" || printf '000')"
 [[ "$storage_status" =~ ^(200|401|403)$ ]] && pass "storage reachable status=$storage_status" || fail "storage unreachable status=$storage_status"
 
 realtime_status="$(curl -k -sS --max-time 15 -o /dev/null -w "%{http_code}" \
+  -H "Host: $HOST_HEADER" \
   -H "apikey: $SERVICE_ROLE_KEY" \
   -H "Authorization: Bearer $SERVICE_ROLE_KEY" \
-  "$SITE_URL/realtime/v1/" || printf '000')"
+  "$EFFECTIVE_SITE_URL/realtime/v1/" || printf '000')"
 [[ "$realtime_status" =~ ^(200|401|403|404)$ ]] && pass "realtime reachable status=$realtime_status" || fail "realtime unreachable status=$realtime_status"
 
 pass "P2 platform smoke complete: $PROJECT_REF"
