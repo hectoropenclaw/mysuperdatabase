@@ -786,6 +786,117 @@ app.patch('/auth/:ref/templates/:template', async (c) => {
   return c.json(rows[0])
 })
 
+app.post('/auth/:ref/templates/:template/preview', async (c) => {
+  const userId = c.get('userId')
+  const { ref, template } = c.req.param()
+  const creds = await getProjectAuthCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found or project not active' }, 404)
+  const body = await c.req.json().catch(() => ({}))
+  const { rows } = await pool.query(
+    `SELECT template, subject, body_html, body_text, redirect_to
+     FROM auth_email_templates WHERE project_id=$1 AND template=$2`,
+    [creds.id, template]
+  )
+  const source = rows[0] ?? defaultEmailTemplate(template)
+  const variables = {
+    ConfirmationURL: body.confirmation_url ?? `${creds.site_url}/auth/v1/verify?token=preview&type=${template}`,
+    SiteURL: creds.site_url,
+    Email: body.email ?? 'preview@example.com',
+    Token: body.token ?? '123456',
+    TokenHash: body.token_hash ?? 'preview-token-hash',
+    RedirectTo: body.redirect_to ?? source.redirect_to ?? creds.site_url,
+    ...body.variables,
+  }
+  const preview = {
+    template,
+    subject: renderTemplate(source.subject, variables),
+    body_html: renderTemplate(source.body_html, variables),
+    body_text: renderTemplate(source.body_text, variables),
+    variables,
+  }
+  await pool.query(
+    `INSERT INTO auth_email_test_events
+       (project_id, template, recipient, subject, body_preview, status, metadata, created_by)
+     VALUES($1, $2, $3, $4, $5, 'previewed', $6, $7)`,
+    [
+      creds.id,
+      template,
+      body.email ?? null,
+      preview.subject,
+      preview.body_text || preview.body_html,
+      JSON.stringify({ mode: 'preview', variables }),
+      userId,
+    ]
+  )
+  await auditEvent(creds.id, userId, 'auth.template.previewed', { template }, 'auth_template', template)
+  return c.json(preview)
+})
+
+app.post('/auth/:ref/templates/:template/test', async (c) => {
+  const userId = c.get('userId')
+  const { ref, template } = c.req.param()
+  const creds = await getProjectAuthCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found or project not active' }, 404)
+  const body = await c.req.json().catch(() => ({}))
+  const recipient = String(body.email ?? '').trim()
+  if (!recipient) return c.json({ message: 'email is required' }, 400)
+  const { rows } = await pool.query(
+    `SELECT template, subject, body_html, body_text, redirect_to
+     FROM auth_email_templates WHERE project_id=$1 AND template=$2`,
+    [creds.id, template]
+  )
+  const source = rows[0] ?? defaultEmailTemplate(template)
+  const variables = {
+    ConfirmationURL: body.confirmation_url ?? `${creds.site_url}/auth/v1/verify?token=preview&type=${template}`,
+    SiteURL: creds.site_url,
+    Email: recipient,
+    Token: body.token ?? '123456',
+    TokenHash: body.token_hash ?? 'preview-token-hash',
+    RedirectTo: body.redirect_to ?? source.redirect_to ?? creds.site_url,
+    ...body.variables,
+  }
+  const subject = renderTemplate(source.subject, variables)
+  const bodyPreview = renderTemplate(source.body_text || source.body_html, variables)
+  const { rows: eventRows } = await pool.query(
+    `INSERT INTO auth_email_test_events
+       (project_id, template, recipient, subject, body_preview, status, metadata, created_by)
+     VALUES($1, $2, $3, $4, $5, 'queued', $6, $7)
+     RETURNING id, template, recipient, subject, status, metadata, created_at`,
+    [
+      creds.id,
+      template,
+      recipient,
+      subject,
+      bodyPreview,
+      JSON.stringify({ mode: 'test', provider: 'configured-gotrue-smtp', variables }),
+      userId,
+    ]
+  )
+  await auditEvent(creds.id, userId, 'auth.template.test_queued', { template, recipient }, 'auth_template', template)
+  return c.json({
+    ...eventRows[0],
+    message: 'Test email event recorded. Delivery is handled by the project GoTrue SMTP configuration.',
+    preview: { subject, body: bodyPreview },
+  }, 202)
+})
+
+app.get('/auth/:ref/templates/:template/tests', async (c) => {
+  const userId = c.get('userId')
+  const { ref, template } = c.req.param()
+  const creds = await getProjectAuthCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found or project not active' }, 404)
+  const limit = parsePositiveInt(c.req.query('limit'), 50, 100)
+  const { rows } = await pool.query(
+    `SELECT id, template, recipient, subject, body_preview, status, metadata, created_at
+     FROM auth_email_test_events
+     WHERE project_id=$1 AND template=$2
+     ORDER BY created_at DESC
+     LIMIT $3`,
+    [creds.id, template, limit]
+  )
+  return c.json(rows)
+})
+
 // ─── DELETE /platform/auth/{ref}/templates/{template}/reset ───────────────────
 app.delete('/auth/:ref/templates/:template/reset', async (c) => {
   const userId = c.get('userId')
@@ -1032,7 +1143,7 @@ app.patch('/auth/:ref/mfa-policy', async (c) => {
 async function getProjectKongCreds(ref: string, userId: string) {
   if (!REF_RE.test(ref)) return null
   const { rows } = await pool.query(
-    `SELECT p.id, p.ref, p.name, p.org_id, p.db_password, p.service_role_key, p.site_url, p.status
+    `SELECT p.id, p.ref, p.name, p.org_id, p.db_password, p.anon_key, p.service_role_key, p.site_url, p.status
      FROM projects p
      JOIN org_members om ON om.org_id = p.org_id
      WHERE p.ref=$1 AND om.user_id=$2 AND p.status='active'`,
@@ -1192,6 +1303,215 @@ function advisorSummary(findings: any[]) {
   }, {})
   return { total: findings.length, count_by_level: countByLevel }
 }
+
+function normalizeSql(sql: unknown) {
+  return String(sql ?? '').trim().replace(/;+\s*$/, '')
+}
+
+function isWriteSql(sql: string) {
+  return /^\s*(alter|call|comment|create|delete|do|drop|grant|insert|reindex|revoke|truncate|update|vacuum)\b/i.test(sql)
+}
+
+async function recordSqlQuery(
+  projectId: string,
+  userId: string,
+  query: string,
+  status: 'completed' | 'failed' | 'blocked',
+  isWrite: boolean,
+  durationMs?: number,
+  rowCount?: number,
+  error?: string
+) {
+  const queryHash = crypto.createHash('sha256').update(query).digest('hex')
+  await pool.query(
+    `INSERT INTO sql_query_history
+       (project_id, query, query_hash, status, is_write, duration_ms, row_count, error, created_by)
+     VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [projectId, query, queryHash, status, isWrite, durationMs ?? null, rowCount ?? null, error ?? null, userId]
+  ).catch((err) => console.error('[sql history]', err.message))
+}
+
+function renderTemplate(input: string | null | undefined, variables: Record<string, string>) {
+  let output = input ?? ''
+  for (const [key, value] of Object.entries(variables)) {
+    output = output
+      .replaceAll(`{{${key}}}`, value)
+      .replaceAll(`{{ ${key} }}`, value)
+      .replaceAll(`{{.${key}}}`, value)
+      .replaceAll(`{{ .${key} }}`, value)
+  }
+  return output
+}
+
+function defaultEmailTemplate(template: string) {
+  const labels: Record<string, string> = {
+    confirmation: 'Confirm your email',
+    invite: 'You have been invited',
+    magic_link: 'Your magic link',
+    recovery: 'Reset your password',
+    email_change: 'Confirm your new email',
+  }
+  const subject = labels[template] ?? `SupaNow ${template}`
+  return {
+    template,
+    subject,
+    body_html: `<p>Hello,</p><p>Use this link to continue:</p><p><a href="{{ConfirmationURL}}">{{ConfirmationURL}}</a></p>`,
+    body_text: `Hello,\n\nUse this link to continue:\n{{ConfirmationURL}}\n`,
+    redirect_to: null,
+  }
+}
+
+// ─── SQL Editor: safe query runner, history, snippets ────────────────────────
+app.post('/sql/:ref/query', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+
+  const body = await c.req.json().catch(() => ({}))
+  const sql = normalizeSql(body.sql)
+  if (!sql) return c.json({ message: 'sql is required' }, 400)
+
+  const isWrite = isWriteSql(sql)
+  const wantsExplain = body.explain === true
+  const wantsDryRun = body.dry_run === true
+  const confirmedWrite = body.confirm_write === true
+
+  if (isWrite && !confirmedWrite && !wantsDryRun) {
+    await recordSqlQuery(project.id, userId, sql, 'blocked', true)
+    return c.json({
+      message: 'Write query requires confirm_write=true or dry_run=true.',
+      requires_confirmation: true,
+      is_write: true,
+    }, 409)
+  }
+
+  if (wantsExplain && isWrite) {
+    await recordSqlQuery(project.id, userId, sql, 'blocked', true)
+    return c.json({ message: 'EXPLAIN is only enabled for read queries in Studio safe mode.' }, 400)
+  }
+
+  const runnableSql = wantsExplain
+    ? `EXPLAIN (FORMAT JSON, COSTS TRUE, VERBOSE FALSE) ${sql}`
+    : wantsDryRun && isWrite
+      ? `BEGIN; ${sql}; ROLLBACK;`
+      : sql
+  const started = Date.now()
+  try {
+    const data = await fetchPgMetaQuery(project.site_url, project.service_role_key, runnableSql)
+    const durationMs = Date.now() - started
+    const rowCount = Array.isArray(data) ? data.length : null
+    await recordSqlQuery(project.id, userId, sql, 'completed', isWrite, durationMs, rowCount ?? undefined)
+    await auditEvent(project.id, userId, 'sql.query.completed', {
+      is_write: isWrite,
+      explain: wantsExplain,
+      dry_run: wantsDryRun,
+      duration_ms: durationMs,
+      row_count: rowCount,
+    }, 'sql_query')
+    return c.json({ data, is_write: isWrite, explain: wantsExplain, dry_run: wantsDryRun, duration_ms: durationMs, row_count: rowCount })
+  } catch (err: any) {
+    const durationMs = Date.now() - started
+    await recordSqlQuery(project.id, userId, sql, 'failed', isWrite, durationMs, undefined, err.message)
+    await auditEvent(project.id, userId, 'sql.query.failed', { is_write: isWrite, error: err.message }, 'sql_query')
+    return c.json({ message: 'SQL query failed', error: err.message, is_write: isWrite }, 400)
+  }
+})
+
+app.get('/sql/:ref/history', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const limit = parsePositiveInt(c.req.query('limit'), 50, 200)
+  const { rows } = await pool.query(
+    `SELECT id, query, query_hash, status, is_write, duration_ms, row_count, error, created_at
+     FROM sql_query_history
+     WHERE project_id=$1
+     ORDER BY created_at DESC
+     LIMIT $2`,
+    [project.id, limit]
+  )
+  return c.json(rows)
+})
+
+app.get('/sql/:ref/snippets', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const { rows } = await pool.query(
+    `SELECT id, name, description, sql, tags, created_at, updated_at
+     FROM sql_snippets
+     WHERE project_id=$1
+     ORDER BY name`,
+    [project.id]
+  )
+  return c.json(rows)
+})
+
+app.post('/sql/:ref/snippets', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const body = await c.req.json()
+  const name = String(body.name ?? '').trim()
+  const sql = normalizeSql(body.sql)
+  if (!name || !sql) return c.json({ message: 'name and sql are required' }, 400)
+  const { rows } = await pool.query(
+    `INSERT INTO sql_snippets(project_id, name, description, sql, tags, created_by)
+     VALUES($1, $2, $3, $4, $5, $6)
+     ON CONFLICT(project_id, name) DO UPDATE SET
+       description=EXCLUDED.description,
+       sql=EXCLUDED.sql,
+       tags=EXCLUDED.tags,
+       updated_at=NOW()
+     RETURNING id, name, description, sql, tags, created_at, updated_at`,
+    [project.id, name, body.description ?? null, sql, body.tags ?? [], userId]
+  )
+  await auditEvent(project.id, userId, 'sql.snippet.saved', { name }, 'sql_snippet', rows[0].id)
+  return c.json(rows[0], 201)
+})
+
+app.patch('/sql/:ref/snippets/:id', async (c) => {
+  const userId = c.get('userId')
+  const { ref, id } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const body = await c.req.json()
+  const { rows } = await pool.query(
+    `UPDATE sql_snippets SET
+       name=COALESCE($3, name),
+       description=COALESCE($4, description),
+       sql=COALESCE($5, sql),
+       tags=COALESCE($6, tags),
+       updated_at=NOW()
+     WHERE project_id=$1 AND id=$2
+     RETURNING id, name, description, sql, tags, created_at, updated_at`,
+    [
+      project.id,
+      id,
+      body.name ? String(body.name).trim() : null,
+      body.description ?? null,
+      body.sql ? normalizeSql(body.sql) : null,
+      body.tags ?? null,
+    ]
+  )
+  if (!rows.length) return c.json({ message: 'Snippet not found' }, 404)
+  await auditEvent(project.id, userId, 'sql.snippet.updated', { id }, 'sql_snippet', id)
+  return c.json(rows[0])
+})
+
+app.delete('/sql/:ref/snippets/:id', async (c) => {
+  const userId = c.get('userId')
+  const { ref, id } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  await pool.query('DELETE FROM sql_snippets WHERE project_id=$1 AND id=$2', [project.id, id])
+  await auditEvent(project.id, userId, 'sql.snippet.deleted', { id }, 'sql_snippet', id)
+  return c.json({ id, status: 'deleted' })
+})
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PROJECT OPERATIONS
@@ -2211,6 +2531,80 @@ app.get('/realtime/:ref/debug-events', async (c) => {
   return c.json(rows)
 })
 
+app.get('/realtime/:ref/client-config', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const channel = c.req.query('channel') ?? 'supanow-debug'
+  return c.json({
+    project_ref: ref,
+    realtime_url: `${project.site_url}/realtime/v1`,
+    supabase_url: project.site_url,
+    anon_key: project.anon_key,
+    sample_channel: channel,
+    javascript: {
+      package: '@supabase/supabase-js',
+      snippet: [
+        `const supabase = createClient(${JSON.stringify(project.site_url)}, ${JSON.stringify(project.anon_key)})`,
+        `const channel = supabase.channel(${JSON.stringify(channel)})`,
+        "channel.on('broadcast', { event: 'supanow_debug' }, (payload) => console.log(payload)).subscribe()",
+      ].join('\n'),
+    },
+    modes: ['presence', 'broadcast', 'postgres_changes'],
+  })
+})
+
+app.get('/realtime/:ref/debug-sessions', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const limit = parsePositiveInt(c.req.query('limit'), 50, 100)
+  const { rows } = await pool.query(
+    `SELECT id, channel, mode, client_config, status, result, created_at, updated_at
+     FROM realtime_debug_sessions
+     WHERE project_id=$1
+     ORDER BY created_at DESC
+     LIMIT $2`,
+    [project.id, limit]
+  )
+  return c.json(rows)
+})
+
+app.post('/realtime/:ref/debug-sessions', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const body = await c.req.json().catch(() => ({}))
+  const channel = String(body.channel ?? 'supanow-debug')
+  const mode = String(body.mode ?? 'broadcast')
+  const clientConfig = {
+    supabase_url: project.site_url,
+    realtime_url: `${project.site_url}/realtime/v1`,
+    anon_key: project.anon_key,
+    channel,
+    modes: ['presence', 'broadcast', 'postgres_changes'],
+  }
+  const result: any = body.run_now
+    ? await timedProbe('realtime', `${project.site_url}/realtime/v1/`, {
+      apikey: project.service_role_key,
+      Authorization: `Bearer ${project.service_role_key}`,
+    })
+    : {}
+  const status = body.run_now ? (result.status === 'healthy' ? 'tested' : 'failed') : 'created'
+  const { rows } = await pool.query(
+    `INSERT INTO realtime_debug_sessions
+       (project_id, channel, mode, client_config, status, result, created_by)
+     VALUES($1, $2, $3, $4, $5, $6, $7)
+     RETURNING id, channel, mode, client_config, status, result, created_at, updated_at`,
+    [project.id, channel, mode, JSON.stringify(clientConfig), status, JSON.stringify(result), userId]
+  )
+  await auditEvent(project.id, userId, 'realtime.debug_session.created', { channel, mode, status }, 'realtime', channel)
+  return c.json(rows[0], 201)
+})
+
 app.post('/realtime/:ref/debug', async (c) => {
   const userId = c.get('userId')
   const { ref } = c.req.param()
@@ -2455,6 +2849,67 @@ app.post('/storage/:ref/buckets/:id/objects/list', async (c) => {
   return storageProxy(creds.site_url, creds.service_role_key, `object/list/${id}`, 'POST', body)
 })
 
+app.get('/storage/:ref/buckets/:id/objects/search', async (c) => {
+  const userId = c.get('userId')
+  const { ref, id } = c.req.param()
+  const creds = await getProjectStorageCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found' }, 404)
+  const q = String(c.req.query('q') ?? '').trim()
+  const prefix = String(c.req.query('prefix') ?? '').trim()
+  const limit = parsePositiveInt(c.req.query('limit'), 50, 200)
+  const sql = `
+    select coalesce(jsonb_agg(jsonb_build_object(
+      'id', id,
+      'bucket_id', bucket_id,
+      'name', name,
+      'owner', owner,
+      'metadata', metadata,
+      'created_at', created_at,
+      'updated_at', updated_at,
+      'last_accessed_at', last_accessed_at
+    ) order by name), '[]'::jsonb) as objects
+    from (
+      select id, bucket_id, name, owner, metadata, created_at, updated_at, last_accessed_at
+      from storage.objects
+      where bucket_id = ${sqlLiteral(id)}
+        and (${sqlLiteral(prefix)} = '' or name like ${sqlLiteral(`${prefix}%`)})
+        and (${sqlLiteral(q)} = '' or name ilike ${sqlLiteral(`%${q}%`)})
+      order by name
+      limit ${limit}
+    ) o`
+  const data = await fetchPgMetaQuery(creds.site_url, creds.service_role_key, sql)
+  return c.json({ bucket_id: id, q, prefix, objects: data?.[0]?.objects ?? [] })
+})
+
+app.get('/storage/:ref/buckets/:id/objects/info', async (c) => {
+  const userId = c.get('userId')
+  const { ref, id } = c.req.param()
+  const creds = await getProjectStorageCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found' }, 404)
+  const objectPath = String(c.req.query('path') ?? '').replace(/^\/+/, '')
+  if (!objectPath) return c.json({ message: 'path is required' }, 400)
+  const sql = `
+    select jsonb_build_object(
+      'id', id,
+      'bucket_id', bucket_id,
+      'name', name,
+      'owner', owner,
+      'metadata', metadata,
+      'created_at', created_at,
+      'updated_at', updated_at,
+      'last_accessed_at', last_accessed_at,
+      'version', version
+    ) as object
+    from storage.objects
+    where bucket_id = ${sqlLiteral(id)}
+      and name = ${sqlLiteral(objectPath)}
+    limit 1`
+  const data = await fetchPgMetaQuery(creds.site_url, creds.service_role_key, sql)
+  const object = data?.[0]?.object
+  if (!object) return c.json({ message: 'Object not found' }, 404)
+  return c.json(object)
+})
+
 app.delete('/storage/:ref/buckets/:id/objects', async (c) => {
   const userId = c.get('userId')
   const { ref, id } = c.req.param()
@@ -2474,6 +2929,17 @@ app.post('/storage/:ref/buckets/:id/objects/move', async (c) => {
   const body = await bodyText(c)
   const response = await storageProxy(creds.site_url, creds.service_role_key, 'object/move', 'POST', body)
   await auditEvent(creds.id, userId, 'storage.object.moved', { body: safeJson(body) }, 'storage_object')
+  return response
+})
+
+app.post('/storage/:ref/buckets/:id/objects/copy', async (c) => {
+  const userId = c.get('userId')
+  const { ref, id } = c.req.param()
+  const creds = await getProjectStorageCreds(ref, userId)
+  if (!creds) return c.json({ message: 'Not found' }, 404)
+  const body = await bodyText(c)
+  const response = await storageProxy(creds.site_url, creds.service_role_key, 'object/copy', 'POST', body)
+  await auditEvent(creds.id, userId, 'storage.object.copied', { bucket_id: id, body: safeJson(body) }, 'storage_object')
   return response
 })
 
