@@ -65,7 +65,9 @@ CROSS JOIN (
     ('advisor_run', 1440, '{}'::jsonb),
     ('log_collect', 15, jsonb_build_object('since_minutes', 20)),
     ('realtime_metrics', 60, '{}'::jsonb),
-    ('backup_verify', 1440, '{}'::jsonb)
+    ('backup_verify', 1440, '{}'::jsonb),
+    ('pitr_status', 1440, '{}'::jsonb),
+    ('restore_drill', 10080, '{}'::jsonb)
 ) defaults(job_type, interval_minutes, config)
 WHERE status='active'
 ON CONFLICT(project_id, job_type) DO NOTHING;

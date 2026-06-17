@@ -4,11 +4,14 @@ import { exec } from 'child_process'
 import { promisify } from 'util'
 import path from 'path'
 import crypto from 'crypto'
+import { existsSync } from 'fs'
 import { auth } from '@/lib/auth'
 import pool from '@/db/client'
 
 const execAsync = promisify(exec)
-const SCRIPTS_DIR = path.resolve(process.cwd(), '../../infra/scripts')
+const cwdScriptsDir = path.resolve(process.cwd(), 'infra/scripts')
+const SCRIPTS_DIR = process.env.SUPANOW_SCRIPTS_DIR
+  ?? (existsSync(cwdScriptsDir) ? cwdScriptsDir : path.resolve(process.cwd(), '../../infra/scripts'))
 
 export const runtime = 'nodejs'
 
@@ -35,6 +38,11 @@ const COMPONENT_SERVICES: Record<string, string> = {
   pgMeta: 'meta',
   edgeRuntime: 'edge-runtime',
   kong: 'kong',
+}
+
+function parseBackupKey(stdout: string) {
+  const match = stdout.match(new RegExp('backed up .*? [^/]+/(.+?\\.sql\\.gz)'))
+  return match?.[1] ?? null
 }
 const AUTH_PROVIDER_KEYS: Record<string, { enabled: string; clientId: string; secret: string; extra?: string[] }> = {
   github: { enabled: 'EXTERNAL_GITHUB_ENABLED', clientId: 'EXTERNAL_GITHUB_CLIENT_ID', secret: 'EXTERNAL_GITHUB_SECRET' },
@@ -1768,12 +1776,12 @@ app.post('/projects/:ref/backups', async (c) => {
   const backupId = rows[0].id
   execAsync(`bash "${SCRIPTS_DIR}/backup.sh" "${ref}"`)
     .then(async ({ stdout }) => {
-      const match = stdout.match(new RegExp('backed up .*? [^/]+/(.+?\\\\.sql\\\\.gz)'))
+      const backupKey = parseBackupKey(stdout)
       await pool.query(
         `UPDATE project_backups
          SET status='completed', backup_key=$1, completed_at=NOW()
          WHERE id=$2`,
-        [match?.[1] ?? null, backupId]
+        [backupKey, backupId]
       )
     })
     .catch(async (err) => {
@@ -1873,6 +1881,183 @@ app.post('/projects/:ref/backups/verify', async (c) => {
   return c.json({ id: runId, status: 'running', backup_key: backupKey || null }, 202)
 })
 
+app.get('/projects/:ref/pitr', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const { rows } = await pool.query(
+    `SELECT id, status, wal_level, archive_mode, archive_command,
+            archived_wal_count, latest_wal, checked_at, error, metadata
+     FROM project_pitr_status
+     WHERE project_id=$1
+     ORDER BY checked_at DESC
+     LIMIT 20`,
+    [project.id]
+  )
+  return c.json(rows)
+})
+
+app.post('/projects/:ref/pitr/enable', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const { rows } = await pool.query(
+    `INSERT INTO project_operation_runs(project_id, job_type, status)
+     VALUES($1, 'pitr_enable', 'running') RETURNING id`,
+    [project.id]
+  )
+  const runId = rows[0].id
+  execAsync(`bash "${SCRIPTS_DIR}/enable-pitr.sh" "${ref}"`, { maxBuffer: 1024 * 1024 })
+    .then(async ({ stdout, stderr }) => {
+      const statusOut = await execAsync(`bash "${SCRIPTS_DIR}/pitr-status.sh" "${ref}"`, { maxBuffer: 1024 * 1024 })
+      const result = JSON.parse(statusOut.stdout)
+      await pool.query(
+        `INSERT INTO project_pitr_status
+           (project_id, status, wal_level, archive_mode, archive_command,
+            archived_wal_count, latest_wal, error, metadata)
+         VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [
+          project.id,
+          result.status,
+          result.wal_level ?? null,
+          result.archive_mode ?? null,
+          result.archive_command ?? null,
+          result.archived_wal_count ?? 0,
+          result.latest_wal ?? null,
+          result.error ?? null,
+          JSON.stringify(result),
+        ]
+      )
+      await pool.query(
+        `UPDATE project_operation_runs SET status='completed', summary=$1, log=$2, completed_at=NOW() WHERE id=$3`,
+        [JSON.stringify(result), [stdout, stderr].filter(Boolean).join('\n').slice(-20000), runId]
+      )
+    })
+    .catch(async (err) => {
+      const result = { project_ref: ref, status: 'failed', error: err.message }
+      await pool.query(
+        `INSERT INTO project_pitr_status(project_id, status, error, metadata)
+         VALUES($1, 'failed', $2, $3)`,
+        [project.id, err.message, JSON.stringify(result)]
+      ).catch(() => {})
+      await pool.query(
+        `UPDATE project_operation_runs SET status='failed', error=$1, log=$2, completed_at=NOW() WHERE id=$3`,
+        [err.message, [err.stdout, err.stderr].filter(Boolean).join('\n').slice(-20000), runId]
+      ).catch(() => {})
+    })
+  await auditEvent(project.id, userId, 'project.pitr_enable.queued', { run_id: runId }, 'project', ref)
+  return c.json({ id: runId, status: 'running' }, 202)
+})
+
+app.post('/projects/:ref/pitr/status/collect', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const { stdout } = await execAsync(`bash "${SCRIPTS_DIR}/pitr-status.sh" "${ref}"`, { maxBuffer: 1024 * 1024 })
+  const result = JSON.parse(stdout)
+  const { rows } = await pool.query(
+    `INSERT INTO project_pitr_status
+       (project_id, status, wal_level, archive_mode, archive_command,
+        archived_wal_count, latest_wal, error, metadata)
+     VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     RETURNING id, status, wal_level, archive_mode, archived_wal_count, latest_wal, checked_at, error, metadata`,
+    [
+      project.id,
+      result.status,
+      result.wal_level ?? null,
+      result.archive_mode ?? null,
+      result.archive_command ?? null,
+      result.archived_wal_count ?? 0,
+      result.latest_wal ?? null,
+      result.error ?? null,
+      JSON.stringify(result),
+    ]
+  )
+  await auditEvent(project.id, userId, 'project.pitr_status.collected', result, 'project', ref)
+  return c.json(rows[0])
+})
+
+app.get('/projects/:ref/restore-drills', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const limit = parsePositiveInt(c.req.query('limit'), 50, 100)
+  const { rows } = await pool.query(
+    `SELECT id, backup_key, status, duration_ms, temp_database, checked_at, error, metadata
+     FROM project_restore_drills
+     WHERE project_id=$1
+     ORDER BY checked_at DESC
+     LIMIT $2`,
+    [project.id, limit]
+  )
+  return c.json(rows)
+})
+
+app.post('/projects/:ref/restore-drills', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const body = await c.req.json().catch(() => ({}))
+  const backupKey = String(body.backup_key ?? '').trim()
+  const args = backupKey ? shellQuote(backupKey) : ''
+  const { rows } = await pool.query(
+    `INSERT INTO project_operation_runs(project_id, job_type, status, summary)
+     VALUES($1, 'restore_drill', 'running', $2) RETURNING id`,
+    [project.id, JSON.stringify({ backup_key: backupKey || null })]
+  )
+  const runId = rows[0].id
+  execAsync(`bash "${SCRIPTS_DIR}/restore-drill.sh" "${ref}" ${args}`, { maxBuffer: 1024 * 1024 * 8 })
+    .then(async ({ stdout }) => {
+      const result = JSON.parse(stdout)
+      await pool.query(
+        `INSERT INTO project_restore_drills(project_id, backup_key, status, duration_ms, temp_database, error, metadata)
+         VALUES($1, $2, $3, $4, $5, $6, $7)`,
+        [project.id, result.backup_key ?? (backupKey || null), result.status, result.duration_ms ?? null, result.temp_database ?? null, result.error ?? null, JSON.stringify(result)]
+      )
+      await pool.query(
+        `UPDATE project_operation_runs SET status=$1, summary=$2, completed_at=NOW() WHERE id=$3`,
+        [result.status === 'verified' ? 'completed' : 'failed', JSON.stringify(result), runId]
+      )
+    })
+    .catch(async (err) => {
+      const result = { status: 'failed', backup_key: backupKey || null, error: err.message }
+      await pool.query(
+        `INSERT INTO project_restore_drills(project_id, backup_key, status, error, metadata)
+         VALUES($1, $2, 'failed', $3, $4)`,
+        [project.id, backupKey || null, err.message, JSON.stringify(result)]
+      ).catch(() => {})
+      await pool.query(
+        `UPDATE project_operation_runs SET status='failed', error=$1, completed_at=NOW() WHERE id=$2`,
+        [err.message, runId]
+      ).catch(() => {})
+    })
+  await auditEvent(project.id, userId, 'project.restore_drill.queued', { run_id: runId, backup_key: backupKey || null }, 'project', ref)
+  return c.json({ id: runId, status: 'running', backup_key: backupKey || null }, 202)
+})
+
+app.get('/projects/:ref/alerts', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  const limit = parsePositiveInt(c.req.query('limit'), 100, 200)
+  const { rows } = await pool.query(
+    `SELECT id, severity, event_type, title, message, delivery_status,
+            delivery_target, error, metadata, created_at, delivered_at
+     FROM project_alert_events
+     WHERE project_id=$1
+     ORDER BY created_at DESC
+     LIMIT $2`,
+    [project.id, limit]
+  )
+  return c.json(rows)
+})
+
 app.post('/projects/:ref/restores', async (c) => {
   const userId = c.get('userId')
   const { ref } = c.req.param()
@@ -1962,10 +2147,69 @@ app.post('/projects/:ref/branches', async (c) => {
           [keys.siteUrl, keys.anonKey, keys.serviceKey, keys.dbPassword, keys.jwtSecret,
            keys.s3AccessKey, keys.s3SecretKey, branchRef]
         )
+        const { rows: backupRows } = await pool.query(
+          `INSERT INTO project_backups(project_id, status, created_by, metadata)
+           VALUES($1, 'running', $2, $3)
+           RETURNING id`,
+          [
+            project.id,
+            userId,
+            JSON.stringify({ reason: 'branch_create', branch_id: branch.id, branch_ref: branchRef }),
+          ]
+        )
+        let backupKey: string | null = null
+        try {
+          const { stdout } = await execAsync(`bash "${SCRIPTS_DIR}/backup.sh" "${ref}"`, { maxBuffer: 1024 * 1024 * 8 })
+          backupKey = parseBackupKey(stdout)
+          await pool.query(
+            `UPDATE project_backups
+             SET status='completed', backup_key=$1, completed_at=NOW()
+             WHERE id=$2`,
+            [backupKey, backupRows[0].id]
+          )
+        } catch (err: any) {
+          await pool.query(
+            `UPDATE project_backups SET status='failed', error=$1, completed_at=NOW() WHERE id=$2`,
+            [err.message, backupRows[0].id]
+          ).catch(() => {})
+          throw err
+        }
         await execAsync(
           `docker exec -e PGPASSWORD="${project.db_password}" "spn-${ref}-db-1" pg_dump -U postgres -h 127.0.0.1 postgres ` +
           `| docker exec -i "spn-${branchRef}-db-1" psql -U postgres -h 127.0.0.1 postgres`
         )
+        if (backupKey) {
+          await execAsync(`bash "${SCRIPTS_DIR}/restore-drill.sh" "${ref}" "${backupKey}"`, { maxBuffer: 1024 * 1024 * 8 })
+            .then(async ({ stdout }) => {
+              const result = JSON.parse(stdout)
+              await pool.query(
+                `INSERT INTO project_restore_drills(project_id, backup_key, status, duration_ms, temp_database, error, metadata)
+                 VALUES($1, $2, $3, $4, $5, $6, $7)`,
+                [
+                  project.id,
+                  result.backup_key ?? backupKey,
+                  result.status,
+                  result.duration_ms ?? null,
+                  result.temp_database ?? null,
+                  result.error ?? null,
+                  JSON.stringify({ ...result, reason: 'branch_create', branch_id: branch.id, branch_ref: branchRef }),
+                ]
+              )
+            })
+            .catch(async (err: any) => {
+              await pool.query(
+                `INSERT INTO project_restore_drills(project_id, backup_key, status, error, metadata)
+                 VALUES($1, $2, 'failed', $3, $4)`,
+                [
+                  project.id,
+                  backupKey,
+                  err.message,
+                  JSON.stringify({ reason: 'branch_create', branch_id: branch.id, branch_ref: branchRef }),
+                ]
+              ).catch(() => {})
+              throw err
+            })
+        }
         await pool.query(`UPDATE project_branches SET status='ready' WHERE id=$1`, [branch.id])
       })
       .catch(async (err: any) => {

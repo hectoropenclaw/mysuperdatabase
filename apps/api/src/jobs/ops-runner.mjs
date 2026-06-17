@@ -51,6 +51,47 @@ async function recordRun(schedule, status, summary, log = '', error = null) {
   )
 }
 
+async function sendAlert(project, severity, eventType, title, message, payload = {}) {
+  const deliveryTarget = process.env.ALERT_WEBHOOK_URL ? 'webhook' : null
+  let delivery = { status: process.env.ALERT_WEBHOOK_URL ? 'queued' : 'suppressed' }
+  if (process.env.ALERT_WEBHOOK_URL) {
+    try {
+      const { stdout } = await execFileAsync(path.join(scriptsDir, 'send-alert.sh'), [], {
+        env: {
+          ...process.env,
+          SEVERITY: severity,
+          EVENT_TYPE: eventType,
+          TITLE: title,
+          MESSAGE: message,
+          PROJECT_REF: project?.ref ?? '',
+          PAYLOAD: json(payload),
+        },
+        maxBuffer: 1024 * 1024,
+      })
+      delivery = JSON.parse(stdout)
+    } catch (err) {
+      delivery = err.stdout ? JSON.parse(err.stdout) : { status: 'failed', error: err.message }
+    }
+  }
+  await pool.query(
+    `INSERT INTO project_alert_events
+       (project_id, severity, event_type, title, message, delivery_status, delivery_target, error, metadata, delivered_at)
+     VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, CASE WHEN $6='sent' THEN NOW() ELSE NULL END)`,
+    [
+      project?.id ?? null,
+      severity,
+      eventType,
+      title,
+      message,
+      delivery.status ?? 'failed',
+      deliveryTarget,
+      delivery.error ?? null,
+      json({ payload, delivery }),
+    ]
+  )
+  return delivery
+}
+
 async function runServiceHealth(project) {
   const headers = { apikey: project.service_role_key, Authorization: `Bearer ${project.service_role_key}` }
   const probes = [
@@ -255,6 +296,89 @@ async function runBackupVerify(project, config) {
   return result
 }
 
+async function runPitrStatus(project) {
+  const { stdout } = await execFileAsync(
+    path.join(scriptsDir, 'pitr-status.sh'),
+    [project.ref],
+    { maxBuffer: 1024 * 1024 }
+  )
+  const result = JSON.parse(stdout)
+  await pool.query(
+    `INSERT INTO project_pitr_status
+       (project_id, status, wal_level, archive_mode, archive_command,
+        archived_wal_count, latest_wal, error, metadata)
+     VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [
+      project.id,
+      result.status,
+      result.wal_level ?? null,
+      result.archive_mode ?? null,
+      result.archive_command ?? null,
+      result.archived_wal_count ?? 0,
+      result.latest_wal ?? null,
+      result.error ?? null,
+      json(result),
+    ]
+  )
+  if (result.status !== 'enabled') {
+    await sendAlert(
+      project,
+      'warning',
+      'pitr.not_enabled',
+      `PITR is not enabled for ${project.ref}`,
+      result.error ?? `PITR status is ${result.status}`,
+      result
+    )
+  }
+  return result
+}
+
+async function runRestoreDrill(project, config) {
+  const args = [project.ref]
+  if (config?.backup_key) args.push(config.backup_key)
+  let result
+  try {
+    const { stdout } = await execFileAsync(
+      path.join(scriptsDir, 'restore-drill.sh'),
+      args,
+      { maxBuffer: 1024 * 1024 * 8 }
+    )
+    result = JSON.parse(stdout)
+  } catch (err) {
+    result = err.stdout ? JSON.parse(err.stdout) : {
+      status: 'failed',
+      backup_key: config?.backup_key ?? null,
+      error: err.message,
+    }
+  }
+  await pool.query(
+    `INSERT INTO project_restore_drills
+       (project_id, backup_key, status, duration_ms, temp_database, error, metadata)
+     VALUES($1, $2, $3, $4, $5, $6, $7)`,
+    [
+      project.id,
+      result.backup_key ?? config?.backup_key ?? null,
+      result.status,
+      result.duration_ms ?? null,
+      result.temp_database ?? null,
+      result.error ?? null,
+      json(result),
+    ]
+  )
+  if (result.status !== 'verified') {
+    await sendAlert(
+      project,
+      'critical',
+      'restore_drill.failed',
+      `Restore drill failed for ${project.ref}`,
+      result.error ?? 'Restore drill failed',
+      result
+    )
+    throw new Error(result.error ?? 'restore drill failed')
+  }
+  return result
+}
+
 async function ensureSchedules() {
   await pool.query(`
     INSERT INTO project_job_schedules(project_id, job_type, interval_minutes, config)
@@ -267,7 +391,9 @@ async function ensureSchedules() {
         ('advisor_run', 1440, '{}'::jsonb),
         ('log_collect', 15, jsonb_build_object('since_minutes', 20)),
         ('realtime_metrics', 60, '{}'::jsonb),
-        ('backup_verify', 1440, '{}'::jsonb)
+        ('backup_verify', 1440, '{}'::jsonb),
+        ('pitr_status', 1440, '{}'::jsonb),
+        ('restore_drill', 10080, '{}'::jsonb)
     ) defaults(job_type, interval_minutes, config)
     WHERE status='active'
     ON CONFLICT(project_id, job_type) DO NOTHING`)
@@ -302,6 +428,8 @@ async function main() {
       else if (schedule.job_type === 'log_collect') summary = await runLogCollect(project, schedule.config)
       else if (schedule.job_type === 'realtime_metrics') summary = await runRealtimeMetrics(project)
       else if (schedule.job_type === 'backup_verify') summary = await runBackupVerify(project, schedule.config)
+      else if (schedule.job_type === 'pitr_status') summary = await runPitrStatus(project)
+      else if (schedule.job_type === 'restore_drill') summary = await runRestoreDrill(project, schedule.config)
       else summary = { skipped: true, reason: 'unknown job type' }
 
       await recordRun(schedule, 'completed', summary)
@@ -315,6 +443,14 @@ async function main() {
       console.log(`ok ${schedule.ref} ${schedule.job_type}`)
     } catch (err) {
       await recordRun(schedule, 'failed', {}, '', err.message)
+      await sendAlert(
+        project,
+        'critical',
+        `job.${schedule.job_type}.failed`,
+        `SupaNow job failed: ${schedule.job_type}`,
+        err.message,
+        { job_type: schedule.job_type, project_ref: schedule.ref }
+      ).catch(() => {})
       await pool.query(
         `UPDATE project_job_schedules
          SET last_run_at=NOW(),
