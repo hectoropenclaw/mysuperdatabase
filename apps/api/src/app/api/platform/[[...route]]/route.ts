@@ -1888,7 +1888,9 @@ app.get('/projects/:ref/pitr', async (c) => {
   if (!project) return c.json({ message: 'Not found' }, 404)
   const { rows } = await pool.query(
     `SELECT id, status, wal_level, archive_mode, archive_command,
-            archived_wal_count, latest_wal, checked_at, error, metadata
+            archived_wal_count, latest_wal, archiver_failed_count,
+            last_archived_wal, last_archived_at, last_failed_wal, last_failed_at,
+            checked_at, error, metadata
      FROM project_pitr_status
      WHERE project_id=$1
      ORDER BY checked_at DESC
@@ -1916,8 +1918,10 @@ app.post('/projects/:ref/pitr/enable', async (c) => {
       await pool.query(
         `INSERT INTO project_pitr_status
            (project_id, status, wal_level, archive_mode, archive_command,
-            archived_wal_count, latest_wal, error, metadata)
-         VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            archived_wal_count, latest_wal, archiver_failed_count,
+            last_archived_wal, last_archived_at, last_failed_wal, last_failed_at,
+            error, metadata)
+         VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
         [
           project.id,
           result.status,
@@ -1926,13 +1930,26 @@ app.post('/projects/:ref/pitr/enable', async (c) => {
           result.archive_command ?? null,
           result.archived_wal_count ?? 0,
           result.latest_wal ?? null,
+          result.archiver_failed_count ?? 0,
+          result.last_archived_wal ?? null,
+          result.last_archived_at ?? null,
+          result.last_failed_wal ?? null,
+          result.last_failed_at ?? null,
           result.error ?? null,
           JSON.stringify(result),
         ]
       )
       await pool.query(
-        `UPDATE project_operation_runs SET status='completed', summary=$1, log=$2, completed_at=NOW() WHERE id=$3`,
-        [JSON.stringify(result), [stdout, stderr].filter(Boolean).join('\n').slice(-20000), runId]
+        `UPDATE project_operation_runs
+         SET status=$1, summary=$2, log=$3, error=$4, completed_at=NOW()
+         WHERE id=$5`,
+        [
+          result.status === 'enabled' ? 'completed' : 'failed',
+          JSON.stringify(result),
+          [stdout, stderr].filter(Boolean).join('\n').slice(-20000),
+          result.status === 'enabled' ? null : (result.error ?? `PITR status is ${result.status}`),
+          runId,
+        ]
       )
     })
     .catch(async (err) => {
@@ -1961,9 +1978,13 @@ app.post('/projects/:ref/pitr/status/collect', async (c) => {
   const { rows } = await pool.query(
     `INSERT INTO project_pitr_status
        (project_id, status, wal_level, archive_mode, archive_command,
-        archived_wal_count, latest_wal, error, metadata)
-     VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
-     RETURNING id, status, wal_level, archive_mode, archived_wal_count, latest_wal, checked_at, error, metadata`,
+        archived_wal_count, latest_wal, archiver_failed_count,
+        last_archived_wal, last_archived_at, last_failed_wal, last_failed_at,
+        error, metadata)
+     VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+     RETURNING id, status, wal_level, archive_mode, archived_wal_count, latest_wal,
+       archiver_failed_count, last_archived_wal, last_archived_at, last_failed_wal,
+       last_failed_at, checked_at, error, metadata`,
     [
       project.id,
       result.status,
@@ -1972,6 +1993,11 @@ app.post('/projects/:ref/pitr/status/collect', async (c) => {
       result.archive_command ?? null,
       result.archived_wal_count ?? 0,
       result.latest_wal ?? null,
+      result.archiver_failed_count ?? 0,
+      result.last_archived_wal ?? null,
+      result.last_archived_at ?? null,
+      result.last_failed_wal ?? null,
+      result.last_failed_at ?? null,
       result.error ?? null,
       JSON.stringify(result),
     ]

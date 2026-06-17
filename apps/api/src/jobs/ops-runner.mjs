@@ -306,8 +306,10 @@ async function runPitrStatus(project) {
   await pool.query(
     `INSERT INTO project_pitr_status
        (project_id, status, wal_level, archive_mode, archive_command,
-        archived_wal_count, latest_wal, error, metadata)
-     VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        archived_wal_count, latest_wal, archiver_failed_count,
+        last_archived_wal, last_archived_at, last_failed_wal, last_failed_at,
+        error, metadata)
+     VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
     [
       project.id,
       result.status,
@@ -316,6 +318,11 @@ async function runPitrStatus(project) {
       result.archive_command ?? null,
       result.archived_wal_count ?? 0,
       result.latest_wal ?? null,
+      result.archiver_failed_count ?? 0,
+      result.last_archived_wal ?? null,
+      result.last_archived_at ?? null,
+      result.last_failed_wal ?? null,
+      result.last_failed_at ?? null,
       result.error ?? null,
       json(result),
     ]

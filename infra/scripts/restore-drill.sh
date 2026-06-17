@@ -67,12 +67,23 @@ gzip -t "$TMP_FILE" || fail_json "gzip validation failed"
 docker exec "$CONTAINER" createdb -U postgres -h 127.0.0.1 "$TEMP_DB" || fail_json "could not create temp database"
 gunzip -c "$TMP_FILE" | docker exec -i "$CONTAINER" psql -U postgres -h 127.0.0.1 "$TEMP_DB" >/tmp/supanow-restore-drill.log 2>&1 || fail_json "$(tail -20 /tmp/supanow-restore-drill.log)"
 docker exec "$CONTAINER" psql -U postgres -h 127.0.0.1 "$TEMP_DB" -Atc "select 1" | grep -q '^1$' || fail_json "validation query failed"
+OBJECT_COUNT="$(
+  docker exec "$CONTAINER" psql -U postgres -h 127.0.0.1 "$TEMP_DB" -Atc \
+    "select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname not like 'pg_%' and n.nspname <> 'information_schema'"
+)"
+SCHEMA_COUNT="$(
+  docker exec "$CONTAINER" psql -U postgres -h 127.0.0.1 "$TEMP_DB" -Atc \
+    "select count(*) from pg_namespace where nspname not like 'pg_%' and nspname <> 'information_schema'"
+)"
+[[ "${OBJECT_COUNT:-0}" -gt 0 ]] || fail_json "restored database has no user objects"
 END_MS="$(date +%s%3N)"
 DURATION_MS="$((END_MS - START_MS))"
 
-printf '{"project_ref":"%s","status":"verified","backup_key":"%s","temp_database":"%s","duration_ms":%s,"checked_at":"%s"}\n' \
+printf '{"project_ref":"%s","status":"verified","backup_key":"%s","temp_database":"%s","duration_ms":%s,"object_count":%s,"schema_count":%s,"checked_at":"%s"}\n' \
   "$PROJECT_REF" \
   "$(printf "%s" "$BACKUP_KEY" | json_escape)" \
   "$TEMP_DB" \
   "$DURATION_MS" \
+  "${OBJECT_COUNT:-0}" \
+  "${SCHEMA_COUNT:-0}" \
   "$(date -u +%Y-%m-%dT%H:%M:%SZ)"

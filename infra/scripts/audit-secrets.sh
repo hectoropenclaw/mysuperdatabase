@@ -27,6 +27,7 @@ git ls-files -z \
     'github_pat_|ghp_[A-Za-z0-9_]{20,}|glpat-|xox[baprs]-|sk-[A-Za-z0-9]{20,}|SUPABASE_SERVICE_ROLE(_KEY)?=|VERCEL_TOKEN=|CLOUDFLARE_API_TOKEN=' \
     2>/dev/null \
   | grep -v '^apps/studio/evals/dataset.ts:' \
+  | grep -v '^infra/scripts/audit-secrets.sh:' \
   | awk -F: '{printf "%s\t%s\tline %s\n", "tracked-file", $1, $2}' \
   > "$TMP_FILE" || true
 

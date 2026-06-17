@@ -26,14 +26,28 @@ fi
 
 settings="$(docker exec "$CONTAINER" psql -U postgres -h 127.0.0.1 -d postgres -At -F $'\t' -c "select current_setting('wal_level'), current_setting('archive_mode'), current_setting('archive_command', true)")"
 IFS=$'\t' read -r WAL_LEVEL ARCHIVE_MODE ARCHIVE_COMMAND <<<"$settings"
+archiver="$(
+  docker exec "$CONTAINER" psql -U postgres -h 127.0.0.1 -d postgres -At -F $'\t' -c \
+    "select archived_count,
+            coalesce(last_archived_wal, ''),
+            coalesce(to_char(last_archived_time at time zone 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'), ''),
+            failed_count,
+            coalesce(last_failed_wal, ''),
+            coalesce(to_char(last_failed_time at time zone 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'), '')
+     from pg_stat_archiver"
+)"
+IFS=$'\t' read -r ARCHIVED_COUNT LAST_ARCHIVED_WAL LAST_ARCHIVED_AT FAILED_COUNT LAST_FAILED_WAL LAST_FAILED_AT <<<"$archiver"
 WAL_COUNT="$(docker exec "$CONTAINER" sh -lc "find /var/lib/postgresql/data/wal_archive -type f 2>/dev/null | wc -l" | tr -d ' ')"
 LATEST_WAL="$(docker exec "$CONTAINER" sh -lc "find /var/lib/postgresql/data/wal_archive -type f -printf '%f\n' 2>/dev/null | sort | tail -1" | tr -d '\r')"
 STATUS="disabled"
 if [[ "$ARCHIVE_MODE" == "on" && "$ARCHIVE_COMMAND" == *wal_archive* ]]; then
   STATUS="enabled"
 fi
+if [[ "${FAILED_COUNT:-0}" -gt 0 && -n "$LAST_FAILED_AT" ]]; then
+  STATUS="failed"
+fi
 
-printf '{"project_ref":"%s","status":"%s","wal_level":"%s","archive_mode":"%s","archive_command":"%s","archived_wal_count":%s,"latest_wal":"%s","checked_at":"%s"}\n' \
+printf '{"project_ref":"%s","status":"%s","wal_level":"%s","archive_mode":"%s","archive_command":"%s","archived_wal_count":%s,"latest_wal":"%s","archiver_archived_count":%s,"archiver_failed_count":%s,"last_archived_wal":"%s","last_archived_at":%s,"last_failed_wal":"%s","last_failed_at":%s,"checked_at":"%s"}\n' \
   "$PROJECT_REF" \
   "$STATUS" \
   "$(printf "%s" "$WAL_LEVEL" | json_escape)" \
@@ -41,4 +55,10 @@ printf '{"project_ref":"%s","status":"%s","wal_level":"%s","archive_mode":"%s","
   "$(printf "%s" "$ARCHIVE_COMMAND" | json_escape)" \
   "${WAL_COUNT:-0}" \
   "$(printf "%s" "$LATEST_WAL" | json_escape)" \
+  "${ARCHIVED_COUNT:-0}" \
+  "${FAILED_COUNT:-0}" \
+  "$(printf "%s" "$LAST_ARCHIVED_WAL" | json_escape)" \
+  "$([[ -n "$LAST_ARCHIVED_AT" ]] && printf '"%s"' "$LAST_ARCHIVED_AT" || printf 'null')" \
+  "$(printf "%s" "$LAST_FAILED_WAL" | json_escape)" \
+  "$([[ -n "$LAST_FAILED_AT" ]] && printf '"%s"' "$LAST_FAILED_AT" || printf 'null')" \
   "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
