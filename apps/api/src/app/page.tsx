@@ -133,6 +133,7 @@ export default async function Home() {
               <StatusRow label="Critical alerts" value={String(project.critical_alerts ?? 0)} />
             </div>
             <div style={styles.actions}>
+              <a href={`/projects/${project.ref}`} style={styles.link}>Studio</a>
               <a href={`/api/platform/projects/${project.ref}`} style={styles.link}>API</a>
               <a href={`/sql?project=${project.ref}`} style={styles.link}>SQL</a>
               <a href={`/api/platform/projects/${project.ref}/logs`} style={styles.link}>Logs</a>

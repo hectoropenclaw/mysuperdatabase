@@ -1415,6 +1415,84 @@ app.get('/sql/:ref/schema', async (c) => {
   }
 })
 
+// ─── Table Editor: row browsing and simple mutations ─────────────────────────
+app.get('/table-editor/:ref/:schema/:table/rows', async (c) => {
+  const userId = c.get('userId')
+  const { ref, schema, table } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  if (!isSafeSqlIdentifier(schema) || !isSafeSqlIdentifier(table)) return c.json({ message: 'Invalid table identifier' }, 400)
+
+  const limit = parsePositiveInt(c.req.query('limit'), 100, 500)
+  const offset = Math.max(0, Number.parseInt(c.req.query('offset') ?? '0', 10) || 0)
+  const sql = `select * from ${sqlIdent(schema)}.${sqlIdent(table)} limit ${limit} offset ${offset}`
+  const data = await fetchPgMetaQuery(project.site_url, project.service_role_key, sql)
+  return c.json({ schema, table, limit, offset, rows: Array.isArray(data) ? data : [] })
+})
+
+app.post('/table-editor/:ref/:schema/:table/rows', async (c) => {
+  const userId = c.get('userId')
+  const { ref, schema, table } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  if (!isSafeSqlIdentifier(schema) || !isSafeSqlIdentifier(table)) return c.json({ message: 'Invalid table identifier' }, 400)
+
+  const body = await c.req.json().catch(() => ({}))
+  const values = body.row && typeof body.row === 'object' && !Array.isArray(body.row) ? body.row : body
+  const columns = Object.keys(values).filter(isSafeSqlIdentifier)
+  if (!columns.length) return c.json({ message: 'row must include at least one safe column' }, 400)
+  const sql = `insert into ${sqlIdent(schema)}.${sqlIdent(table)} (${columns.map(sqlIdent).join(', ')})
+values (${columns.map((column) => sqlValue(values[column])).join(', ')})
+returning *`
+  const data = await fetchPgMetaQuery(project.site_url, project.service_role_key, sql)
+  await auditEvent(project.id, userId, 'table_editor.row.inserted', { schema, table, columns }, 'table_row', `${schema}.${table}`)
+  return c.json({ row: Array.isArray(data) ? data[0] : data }, 201)
+})
+
+app.patch('/table-editor/:ref/:schema/:table/rows', async (c) => {
+  const userId = c.get('userId')
+  const { ref, schema, table } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  if (!isSafeSqlIdentifier(schema) || !isSafeSqlIdentifier(table)) return c.json({ message: 'Invalid table identifier' }, 400)
+
+  const body = await c.req.json().catch(() => ({}))
+  const pk = body.pk && typeof body.pk === 'object' && !Array.isArray(body.pk) ? body.pk : null
+  const values = body.values && typeof body.values === 'object' && !Array.isArray(body.values) ? body.values : null
+  if (!pk || !Object.keys(pk).length) return c.json({ message: 'pk object is required' }, 400)
+  if (!values || !Object.keys(values).length) return c.json({ message: 'values object is required' }, 400)
+  const setColumns = Object.keys(values).filter(isSafeSqlIdentifier)
+  const pkColumns = Object.keys(pk).filter(isSafeSqlIdentifier)
+  if (!setColumns.length || !pkColumns.length) return c.json({ message: 'Only safe column identifiers are allowed' }, 400)
+  const sql = `update ${sqlIdent(schema)}.${sqlIdent(table)}
+set ${setColumns.map((column) => `${sqlIdent(column)} = ${sqlValue(values[column])}`).join(', ')}
+where ${pkColumns.map((column) => `${sqlIdent(column)} is not distinct from ${sqlValue(pk[column])}`).join(' and ')}
+returning *`
+  const data = await fetchPgMetaQuery(project.site_url, project.service_role_key, sql)
+  await auditEvent(project.id, userId, 'table_editor.row.updated', { schema, table, set_columns: setColumns, pk_columns: pkColumns }, 'table_row', `${schema}.${table}`)
+  return c.json({ rows: Array.isArray(data) ? data : [] })
+})
+
+app.delete('/table-editor/:ref/:schema/:table/rows', async (c) => {
+  const userId = c.get('userId')
+  const { ref, schema, table } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+  if (!isSafeSqlIdentifier(schema) || !isSafeSqlIdentifier(table)) return c.json({ message: 'Invalid table identifier' }, 400)
+
+  const body = await c.req.json().catch(() => ({}))
+  const pk = body.pk && typeof body.pk === 'object' && !Array.isArray(body.pk) ? body.pk : null
+  if (!pk || !Object.keys(pk).length) return c.json({ message: 'pk object is required' }, 400)
+  const pkColumns = Object.keys(pk).filter(isSafeSqlIdentifier)
+  if (!pkColumns.length) return c.json({ message: 'Only safe column identifiers are allowed' }, 400)
+  const sql = `delete from ${sqlIdent(schema)}.${sqlIdent(table)}
+where ${pkColumns.map((column) => `${sqlIdent(column)} is not distinct from ${sqlValue(pk[column])}`).join(' and ')}
+returning *`
+  const data = await fetchPgMetaQuery(project.site_url, project.service_role_key, sql)
+  await auditEvent(project.id, userId, 'table_editor.row.deleted', { schema, table, pk_columns: pkColumns }, 'table_row', `${schema}.${table}`)
+  return c.json({ rows: Array.isArray(data) ? data : [] })
+})
+
 app.post('/sql/:ref/query', async (c) => {
   const userId = c.get('userId')
   const { ref } = c.req.param()
@@ -3189,6 +3267,18 @@ function sqlLiteral(value: string) {
 
 function sqlIdent(value: string) {
   return `"${value.replace(/"/g, '""')}"`
+}
+
+function isSafeSqlIdentifier(value: string) {
+  return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(value)
+}
+
+function sqlValue(value: unknown): string {
+  if (value === null || value === undefined) return 'null'
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : 'null'
+  if (typeof value === 'boolean') return value ? 'true' : 'false'
+  if (typeof value === 'object') return `${sqlLiteral(JSON.stringify(value))}::jsonb`
+  return sqlLiteral(String(value))
 }
 
 function shellQuote(value: unknown) {
