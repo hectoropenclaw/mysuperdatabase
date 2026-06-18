@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	DefaultAPIURL = "https://supanow.launchpad.hconsulting.mx"
+	DefaultAPIURL = "https://supanow.hconsulting.app"
 	configFile    = "config.json"
 	linkFile      = ".supanow"
 )
