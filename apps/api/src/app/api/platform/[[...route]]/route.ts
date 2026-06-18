@@ -1401,6 +1401,20 @@ function defaultEmailTemplate(template: string) {
 }
 
 // ─── SQL Editor: safe query runner, history, snippets ────────────────────────
+app.get('/sql/:ref/schema', async (c) => {
+  const userId = c.get('userId')
+  const { ref } = c.req.param()
+  const project = await getProjectKongCreds(ref, userId)
+  if (!project) return c.json({ message: 'Not found' }, 404)
+
+  try {
+    const schema = await fetchProjectSchema(project)
+    return c.json(schema)
+  } catch (err: any) {
+    return c.json({ message: 'Failed to inspect project schema', error: err.message }, 400)
+  }
+})
+
 app.post('/sql/:ref/query', async (c) => {
   const userId = c.get('userId')
   const { ref } = c.req.param()
