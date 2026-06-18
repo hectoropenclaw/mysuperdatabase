@@ -297,19 +297,31 @@ async function runBackupVerify(project, config) {
 }
 
 async function runPitrStatus(project) {
+  let offsite = {}
+  try {
+    const { stdout } = await execFileAsync(
+      path.join(scriptsDir, 'sync-wal-archive.sh'),
+      [project.ref],
+      { maxBuffer: 1024 * 1024 * 8 }
+    )
+    offsite = JSON.parse(stdout)
+  } catch (err) {
+    offsite = { offsite_error: err.stdout ? String(err.stdout).trim() : err.message }
+  }
   const { stdout } = await execFileAsync(
     path.join(scriptsDir, 'pitr-status.sh'),
     [project.ref],
     { maxBuffer: 1024 * 1024 }
   )
-  const result = JSON.parse(stdout)
+  const result = { ...offsite, ...JSON.parse(stdout) }
   await pool.query(
     `INSERT INTO project_pitr_status
        (project_id, status, wal_level, archive_mode, archive_command,
         archived_wal_count, latest_wal, archiver_failed_count,
         last_archived_wal, last_archived_at, last_failed_wal, last_failed_at,
+        offsite_wal_count, latest_offsite_wal, offsite_synced_at, offsite_error,
         error, metadata)
-     VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+     VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
     [
       project.id,
       result.status,
@@ -323,6 +335,10 @@ async function runPitrStatus(project) {
       result.last_archived_at ?? null,
       result.last_failed_wal ?? null,
       result.last_failed_at ?? null,
+      result.offsite_wal_count ?? 0,
+      result.latest_offsite_wal ?? null,
+      result.offsite_synced_at ?? null,
+      result.offsite_error ?? null,
       result.error ?? null,
       json(result),
     ]

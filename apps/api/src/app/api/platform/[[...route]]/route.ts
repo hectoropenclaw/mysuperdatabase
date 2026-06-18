@@ -1890,6 +1890,7 @@ app.get('/projects/:ref/pitr', async (c) => {
     `SELECT id, status, wal_level, archive_mode, archive_command,
             archived_wal_count, latest_wal, archiver_failed_count,
             last_archived_wal, last_archived_at, last_failed_wal, last_failed_at,
+            offsite_wal_count, latest_offsite_wal, offsite_synced_at, offsite_error,
             checked_at, error, metadata
      FROM project_pitr_status
      WHERE project_id=$1
@@ -1913,15 +1914,23 @@ app.post('/projects/:ref/pitr/enable', async (c) => {
   const runId = rows[0].id
   execAsync(`bash "${SCRIPTS_DIR}/enable-pitr.sh" "${ref}"`, { maxBuffer: 1024 * 1024 })
     .then(async ({ stdout, stderr }) => {
+      let offsite = {}
+      try {
+        const syncOut = await execAsync(`bash "${SCRIPTS_DIR}/sync-wal-archive.sh" "${ref}"`, { maxBuffer: 1024 * 1024 * 8 })
+        offsite = JSON.parse(syncOut.stdout)
+      } catch (err: any) {
+        offsite = { offsite_error: err.stdout ? String(err.stdout).trim() : err.message }
+      }
       const statusOut = await execAsync(`bash "${SCRIPTS_DIR}/pitr-status.sh" "${ref}"`, { maxBuffer: 1024 * 1024 })
-      const result = JSON.parse(statusOut.stdout)
+      const result = { ...offsite, ...JSON.parse(statusOut.stdout) }
       await pool.query(
         `INSERT INTO project_pitr_status
            (project_id, status, wal_level, archive_mode, archive_command,
             archived_wal_count, latest_wal, archiver_failed_count,
             last_archived_wal, last_archived_at, last_failed_wal, last_failed_at,
+            offsite_wal_count, latest_offsite_wal, offsite_synced_at, offsite_error,
             error, metadata)
-         VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+         VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
         [
           project.id,
           result.status,
@@ -1935,6 +1944,10 @@ app.post('/projects/:ref/pitr/enable', async (c) => {
           result.last_archived_at ?? null,
           result.last_failed_wal ?? null,
           result.last_failed_at ?? null,
+          result.offsite_wal_count ?? 0,
+          result.latest_offsite_wal ?? null,
+          result.offsite_synced_at ?? null,
+          result.offsite_error ?? null,
           result.error ?? null,
           JSON.stringify(result),
         ]
@@ -1973,18 +1986,27 @@ app.post('/projects/:ref/pitr/status/collect', async (c) => {
   const { ref } = c.req.param()
   const project = await getProjectKongCreds(ref, userId)
   if (!project) return c.json({ message: 'Not found' }, 404)
+  let offsite = {}
+  try {
+    const syncOut = await execAsync(`bash "${SCRIPTS_DIR}/sync-wal-archive.sh" "${ref}"`, { maxBuffer: 1024 * 1024 * 8 })
+    offsite = JSON.parse(syncOut.stdout)
+  } catch (err: any) {
+    offsite = { offsite_error: err.stdout ? String(err.stdout).trim() : err.message }
+  }
   const { stdout } = await execAsync(`bash "${SCRIPTS_DIR}/pitr-status.sh" "${ref}"`, { maxBuffer: 1024 * 1024 })
-  const result = JSON.parse(stdout)
+  const result = { ...offsite, ...JSON.parse(stdout) }
   const { rows } = await pool.query(
     `INSERT INTO project_pitr_status
        (project_id, status, wal_level, archive_mode, archive_command,
         archived_wal_count, latest_wal, archiver_failed_count,
         last_archived_wal, last_archived_at, last_failed_wal, last_failed_at,
+        offsite_wal_count, latest_offsite_wal, offsite_synced_at, offsite_error,
         error, metadata)
-     VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+     VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
      RETURNING id, status, wal_level, archive_mode, archived_wal_count, latest_wal,
        archiver_failed_count, last_archived_wal, last_archived_at, last_failed_wal,
-       last_failed_at, checked_at, error, metadata`,
+       last_failed_at, offsite_wal_count, latest_offsite_wal, offsite_synced_at,
+       offsite_error, checked_at, error, metadata`,
     [
       project.id,
       result.status,
@@ -1998,6 +2020,10 @@ app.post('/projects/:ref/pitr/status/collect', async (c) => {
       result.last_archived_at ?? null,
       result.last_failed_wal ?? null,
       result.last_failed_at ?? null,
+      result.offsite_wal_count ?? 0,
+      result.latest_offsite_wal ?? null,
+      result.offsite_synced_at ?? null,
+      result.offsite_error ?? null,
       result.error ?? null,
       JSON.stringify(result),
     ]
