@@ -105,6 +105,7 @@ export default async function Home() {
         <p style={styles.kicker}>SupaNow Studio</p>
         <h1 style={styles.title}>Operaciones por proyecto, sin adivinar.</h1>
         <p style={styles.copy}>Backups, PITR, restore drills, health checks y alertas quedan en una sola vista para cerrar incidentes con evidencia.</p>
+        <Link href="/sql" style={styles.button}>Open SQL Editor</Link>
       </section>
 
       <section style={styles.metrics}>
@@ -133,6 +134,7 @@ export default async function Home() {
             </div>
             <div style={styles.actions}>
               <a href={`/api/platform/projects/${project.ref}`} style={styles.link}>API</a>
+              <a href={`/sql?project=${project.ref}`} style={styles.link}>SQL</a>
               <a href={`/api/platform/projects/${project.ref}/logs`} style={styles.link}>Logs</a>
               <a href={`/api/platform/projects/${project.ref}/backups`} style={styles.link}>Backups</a>
               {project.site_url ? <a href={project.site_url} style={styles.link}>Open</a> : null}
