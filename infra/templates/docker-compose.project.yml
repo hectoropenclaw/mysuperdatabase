@@ -42,6 +42,11 @@ services:
       - config_file=/etc/postgresql/postgresql.conf
       - -c
       - log_min_messages=fatal
+      # The base image enables WAL archiving to a local wal_archive/ dir with no
+      # retention; without a PITR pipeline consuming them it grows unbounded (filled
+      # 53GB on the first project). We don't run PITR here, so disable archiving.
+      - -c
+      - archive_mode=off
     volumes:
       - db-data:/var/lib/postgresql/data
       # roles.sql is NOT in initdb.d — provision.sh runs it explicitly as supabase_admin
