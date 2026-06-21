@@ -225,21 +225,20 @@ done
 # ─── Run roles init as supabase_admin (the only user that can ALTER reserved roles) ──
 # NOTE: roles.sql is NOT in docker-entrypoint-initdb.d — it is run explicitly here
 #       so that the correct superuser (supabase_admin) executes it every time.
+# Copy the file in FIRST, then run it once with -f (order matters; running -f
+# before the copy left role passwords unset → storage/rest auth failures).
 echo "→ Running DB roles init as supabase_admin..."
-docker compose -f "$PROJECT_DIR/docker-compose.yml" --project-name "spn-${PROJECT_REF}" \
-  exec -T db psql -U supabase_admin -h 127.0.0.1 -d postgres -f /tmp/roles.sql 2>&1 || \
+docker cp "$PROJECT_DIR/db/roles.sql" "spn-${PROJECT_REF}-db-1:/tmp/roles.sql"
 docker exec "spn-${PROJECT_REF}-db-1" \
-  sh -c "psql -U supabase_admin -d postgres" < "$PROJECT_DIR/db/roles.sql"
+  psql -U supabase_admin -h 127.0.0.1 -d postgres -v ON_ERROR_STOP=1 -f /tmp/roles.sql
 
-# Fallback: copy and run if exec -f fails (some images restrict -f)
-docker cp "$PROJECT_DIR/db/roles.sql" "spn-${PROJECT_REF}-db-1:/tmp/roles.sql" 2>/dev/null || true
-docker exec "spn-${PROJECT_REF}-db-1" \
-  psql -U supabase_admin -h 127.0.0.1 -d postgres -f /tmp/roles.sql 2>&1 || true
-
-echo "→ Verifying role passwords were applied..."
-docker exec "spn-${PROJECT_REF}-db-1" \
-  psql -U supabase_admin -h 127.0.0.1 -d postgres -c \
-  "SELECT rolname FROM pg_roles WHERE rolname IN ('supabase_storage_admin','authenticator','supabase_auth_admin')" 2>&1
+echo "→ Verifying role passwords actually authenticate..."
+for role in authenticator supabase_auth_admin supabase_storage_admin; do
+  docker exec -e PGPASSWORD="$DB_PASSWORD" "spn-${PROJECT_REF}-db-1" \
+    psql -U "$role" -h 127.0.0.1 -d postgres -tAc "SELECT 1" >/dev/null 2>&1 \
+    && echo "  ✓ $role can authenticate" \
+    || { echo "  ✗ $role FAILED to authenticate with DB_PASSWORD"; exit 1; }
+done
 
 # ─── Seed edge functions + secrets.env ────────────────────────────────────────
 touch "$PROJECT_DIR/secrets.env"
@@ -256,11 +255,14 @@ docker compose -f "$PROJECT_DIR/docker-compose.yml" --project-name "spn-${PROJEC
 # ─── Wait for every critical service to be healthy ────────────────────────────
 echo "→ Waiting for all services to become healthy..."
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-120}"
+# Critical for any project: db + kong (gateway). REST is core but has no
+# healthcheck (verified separately below). Auth/storage/realtime are optional —
+# they self-heal via restart and aren't needed by data-only projects.
 wait_healthy "spn-${PROJECT_REF}-db-1"      "$HEALTH_TIMEOUT"
-wait_healthy "spn-${PROJECT_REF}-auth-1"    "$HEALTH_TIMEOUT"
-wait_healthy "spn-${PROJECT_REF}-rest-1"    "$HEALTH_TIMEOUT" || true  # no healthcheck
 wait_healthy "spn-${PROJECT_REF}-kong-1"    "$HEALTH_TIMEOUT"
-wait_healthy "spn-${PROJECT_REF}-storage-1" "$HEALTH_TIMEOUT"
+wait_healthy "spn-${PROJECT_REF}-auth-1"    "$HEALTH_TIMEOUT" || echo "  [warn] auth not healthy yet (non-fatal)"
+wait_healthy "spn-${PROJECT_REF}-rest-1"    "$HEALTH_TIMEOUT" || true  # no healthcheck
+wait_healthy "spn-${PROJECT_REF}-storage-1" "$HEALTH_TIMEOUT" || echo "  [warn] storage not healthy yet (non-fatal)"
 wait_healthy "spn-${PROJECT_REF}-realtime-1" "$HEALTH_TIMEOUT" || true  # slow starter
 
 # ─── Register project in control plane DB ─────────────────────────────────────

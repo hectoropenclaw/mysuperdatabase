@@ -6,13 +6,13 @@
 
 -- ─── Service role passwords ───────────────────────────────────────────────────
 -- Plain ALTER ROLE is blocked on reserved roles; use DO+EXECUTE to bypass.
+-- No EXCEPTION swallow: a failure here must abort provisioning (a silently unset
+-- password produces a broken stack where storage/rest can't authenticate).
 DO $$
 BEGIN
   EXECUTE format('ALTER ROLE authenticator WITH PASSWORD %L', '${DB_PASSWORD}');
   EXECUTE format('ALTER ROLE supabase_auth_admin WITH PASSWORD %L', '${DB_PASSWORD}');
   EXECUTE format('ALTER ROLE supabase_storage_admin WITH PASSWORD %L', '${DB_PASSWORD}');
-EXCEPTION WHEN OTHERS THEN
-  RAISE WARNING 'Could not set role password: %', SQLERRM;
 END;
 $$;
 
