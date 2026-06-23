@@ -312,6 +312,9 @@ JSON
         '${S3_ACCESS_KEY}', '${S3_SECRET_KEY}', '${COMPONENT_VERSIONS_JSON}'::jsonb)
      ON CONFLICT (ref) DO UPDATE SET
        status='active',
+       site_url=EXCLUDED.site_url,
+       db_host=EXCLUDED.db_host,
+       db_port=EXCLUDED.db_port,
        jwt_secret=EXCLUDED.jwt_secret,
        anon_key=EXCLUDED.anon_key,
        service_role_key=EXCLUDED.service_role_key,
