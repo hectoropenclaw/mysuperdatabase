@@ -29,6 +29,12 @@ PROJECTS_DIR="$INFRA_DIR/projects"
 KONG_DIR="$INFRA_DIR/templates/kong"
 PROJECT_DIR="$PROJECTS_DIR/$PROJECT_REF"
 
+# ─── Global GoTrue secrets (SMTP + OAuth), shared by every project ────────────
+# Lets every provisioned project inherit working email (Resend) + Google login.
+if [[ -f "$INFRA_DIR/auth-secrets.env" ]]; then
+  set -a; source "$INFRA_DIR/auth-secrets.env"; set +a
+fi
+
 # Control-plane DB — used to register the project at the end
 CP_DATABASE_URL="${CP_DATABASE_URL:-postgresql://postgres:6ebdc748fa747997d018a225eb5114a58695fcd8@localhost:5433/supanow_cp}"
 

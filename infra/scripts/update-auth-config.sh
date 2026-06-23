@@ -21,6 +21,12 @@ TEMPLATES_DIR="$INFRA_DIR/templates"
 PROJECTS_DIR="$INFRA_DIR/projects"
 PROJECT_DIR="$PROJECTS_DIR/$PROJECT_REF"
 
+# Global GoTrue secrets (SMTP + OAuth) shared by every project. Loaded first so the
+# control plane / caller can still override individual vars from the environment.
+if [[ -f "$INFRA_DIR/auth-secrets.env" ]]; then
+  set -a; source "$INFRA_DIR/auth-secrets.env"; set +a
+fi
+
 if [[ ! -d "$PROJECT_DIR" ]]; then
   echo "[ERROR] Project directory not found: $PROJECT_DIR" >&2
   exit 1
