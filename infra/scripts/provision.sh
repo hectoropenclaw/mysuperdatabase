@@ -73,10 +73,16 @@ wait_healthy() {
   local timeout="${2:-120}"
   local elapsed=0
   echo "  waiting for $container..."
-  until [[ "$(docker inspect "$container" --format '{{.State.Health.Status}}' 2>/dev/null)" == "healthy" ]]; do
-    # Also accept containers with no healthcheck that are simply running
+  until [[ "$(docker inspect "$container" --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' 2>/dev/null)" == "healthy" ]]; do
+    # Containers without a healthcheck are ready enough for endpoint smoke tests.
     local state
     state=$(docker inspect "$container" --format '{{.State.Status}}' 2>/dev/null || echo "missing")
+    local health
+    health=$(docker inspect "$container" --format '{{if .State.Health}}configured{{else}}none{{end}}' 2>/dev/null || echo "missing")
+    if [[ "$state" == "running" && "$health" == "none" ]]; then
+      echo "  ✓ $container running (no healthcheck)"
+      return 0
+    fi
     if [[ "$state" == "exited" || "$state" == "dead" ]]; then
       echo "✗ $container exited unexpectedly"
       docker logs "$container" --tail 20 2>&1 || true
@@ -115,7 +121,7 @@ make_jwt() {
 ANON_KEY=$(make_jwt "anon" "$JWT_SECRET")
 SERVICE_KEY=$(make_jwt "service_role" "$JWT_SECRET")
 REALTIME_SECRET_KEY_BASE=$(openssl rand -hex 64)
-SITE_URL="https://${PROJECT_REF}.db.hconsulting.app"
+SITE_URL="https://${PROJECT_REF}-db.hconsulting.app"
 
 echo "→ Provisioning project: $PROJECT_REF"
 echo "  site_url:    $SITE_URL"
@@ -137,6 +143,7 @@ export KONG_RATE_LIMIT_PER_MINUTE="${KONG_RATE_LIMIT_PER_MINUTE:-500}"
 export KONG_RATE_LIMIT_PER_HOUR="${KONG_RATE_LIMIT_PER_HOUR:-5000}"
 
 export GOTRUE_DISABLE_SIGNUP="${GOTRUE_DISABLE_SIGNUP:-false}"
+export GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED="${GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED:-false}"
 export GOTRUE_JWT_EXP="${GOTRUE_JWT_EXP:-3600}"
 export GOTRUE_MAILER_AUTOCONFIRM="${GOTRUE_MAILER_AUTOCONFIRM:-false}"
 export GOTRUE_EXTERNAL_EMAIL_ENABLED="${GOTRUE_EXTERNAL_EMAIL_ENABLED:-true}"
@@ -263,7 +270,7 @@ wait_healthy "spn-${PROJECT_REF}-kong-1"    "$HEALTH_TIMEOUT"
 wait_healthy "spn-${PROJECT_REF}-auth-1"    "$HEALTH_TIMEOUT" || echo "  [warn] auth not healthy yet (non-fatal)"
 wait_healthy "spn-${PROJECT_REF}-rest-1"    "$HEALTH_TIMEOUT" || true  # no healthcheck
 wait_healthy "spn-${PROJECT_REF}-storage-1" "$HEALTH_TIMEOUT" || echo "  [warn] storage not healthy yet (non-fatal)"
-wait_healthy "spn-${PROJECT_REF}-realtime-1" "$HEALTH_TIMEOUT" || true  # slow starter
+wait_healthy "realtime-dev.spn-${PROJECT_REF}" "$HEALTH_TIMEOUT" || true  # slow starter
 
 # ─── Register project in control plane DB ─────────────────────────────────────
 echo "→ Registering project in control plane DB..."
@@ -338,7 +345,7 @@ KEYS
 # the Cloudflare tunnel URL. Allow up to 30s for DNS + TLS to propagate.
 echo "→ Smoke testing stack..."
 
-SMOKE_URL="https://${PROJECT_REF}.db.hconsulting.app"
+SMOKE_URL="$SITE_URL"
 SMOKE_TIMEOUT=30
 SMOKE_ELAPSED=0
 SMOKE_STATUS=""

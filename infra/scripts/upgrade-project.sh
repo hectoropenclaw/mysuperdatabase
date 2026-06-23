@@ -23,7 +23,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 PROJECTS_DIR="$REPO_ROOT/infra/projects"
 COMPOSE_FILE="$PROJECTS_DIR/$PROJECT_REF/docker-compose.yml"
 
-HEALTH_URL="${HEALTH_URL:-https://${PROJECT_REF}.db.hconsulting.app/rest/v1/}"
+HEALTH_URL="${HEALTH_URL:-https://${PROJECT_REF}-db.hconsulting.app/rest/v1/}"
 HEALTH_RETRIES="${HEALTH_RETRIES:-24}"
 HEALTH_SLEEP="${HEALTH_SLEEP:-5}"
 SKIP_BACKUP="${SKIP_BACKUP:-0}"

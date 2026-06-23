@@ -395,7 +395,7 @@ app.get('/feature-flags', (c) => {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // AUTH ENDPOINTS — proxied to per-project GoTrue admin API
-// GoTrue admin is exposed via Kong at https://{ref}.db.hconsulting.app/auth/v1/admin/*
+// GoTrue admin is exposed via Kong at https://{ref}-db.hconsulting.app/auth/v1/admin/*
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // Helper: get project's service_role_key and endpoint for GoTrue admin proxying
@@ -3861,7 +3861,7 @@ function generateRef(): string {
 }
 
 function projectToStudioShape(p: any) {
-  const siteUrl = p.site_url ?? `https://${p.ref}.db.hconsulting.app`
+  const siteUrl = p.site_url ?? `https://${p.ref}-db.hconsulting.app`
   const isActive = p.status === 'active'
   return {
     id: p.id,

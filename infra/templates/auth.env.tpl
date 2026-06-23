@@ -20,6 +20,7 @@ GOTRUE_JWT_ADMIN_ROLES=service_role
 
 # ─── Sign-up ──────────────────────────────────────────────────────────────
 GOTRUE_DISABLE_SIGNUP=${GOTRUE_DISABLE_SIGNUP:-false}
+GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED=${GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED}
 
 # ─── Email ────────────────────────────────────────────────────────────────
 GOTRUE_EXTERNAL_EMAIL_ENABLED=${GOTRUE_EXTERNAL_EMAIL_ENABLED:-true}

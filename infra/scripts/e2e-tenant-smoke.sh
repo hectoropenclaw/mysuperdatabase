@@ -12,7 +12,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 COMPOSE_FILE="$REPO_ROOT/infra/projects/$PROJECT_REF/docker-compose.yml"
 SITE_URL="${SITE_URL:-https://localhost}"
-HOST_HEADER="${HOST_HEADER:-${PROJECT_REF}.db.hconsulting.app}"
+HOST_HEADER="${HOST_HEADER:-${PROJECT_REF}-db.hconsulting.app}"
 
 if [[ ! -f "$COMPOSE_FILE" ]]; then
   echo "[FAIL] Missing tenant compose: $COMPOSE_FILE" >&2

@@ -33,7 +33,7 @@ services:
   ## REST API
   - name: rest-v1
     _comment: "PostgREST: /rest/v1/*"
-    url: http://rest:3000/
+    url: http://spn-${PROJECT_REF}-rest-1:3000/
     routes:
       - name: rest-v1-all
         strip_path: true
@@ -54,7 +54,7 @@ services:
   ## Auth
   - name: auth-v1-open
     _comment: "GoTrue: /auth/v1/verify — public, no auth needed"
-    url: http://auth:9999/verify
+    url: http://spn-${PROJECT_REF}-auth-1:9999/verify
     routes:
       - name: auth-v1-open
         strip_path: true
@@ -64,7 +64,7 @@ services:
       - name: cors
 
   - name: auth-v1-open-callback
-    url: http://auth:9999/callback
+    url: http://spn-${PROJECT_REF}-auth-1:9999/callback
     routes:
       - name: auth-v1-open-callback
         strip_path: true
@@ -74,7 +74,7 @@ services:
       - name: cors
 
   - name: auth-v1-open-authorize
-    url: http://auth:9999/authorize
+    url: http://spn-${PROJECT_REF}-auth-1:9999/authorize
     routes:
       - name: auth-v1-open-authorize
         strip_path: true
@@ -85,7 +85,7 @@ services:
 
   - name: auth-v1-admin
     _comment: "GoTrue admin API: /auth/v1/admin/* — service_role only"
-    url: http://auth:9999/admin/
+    url: http://spn-${PROJECT_REF}-auth-1:9999/admin/
     routes:
       - name: auth-v1-admin-all
         strip_path: true
@@ -104,7 +104,7 @@ services:
 
   - name: auth-v1
     _comment: "GoTrue: /auth/v1/*"
-    url: http://auth:9999/
+    url: http://spn-${PROJECT_REF}-auth-1:9999/
     routes:
       - name: auth-v1-all
         strip_path: true
@@ -125,7 +125,7 @@ services:
   ## Realtime
   - name: realtime-v1
     _comment: "Realtime: /realtime/v1/*"
-    url: http://realtime:4000/socket/
+    url: http://realtime-dev.spn-${PROJECT_REF}:4000/socket/
     routes:
       - name: realtime-v1-all
         strip_path: true
@@ -146,7 +146,7 @@ services:
   ## Storage
   - name: storage-v1
     _comment: "Storage API: /storage/v1/*"
-    url: http://storage:5000/
+    url: http://spn-${PROJECT_REF}-storage-1:5000/
     routes:
       - name: storage-v1-all
         strip_path: true
@@ -158,7 +158,7 @@ services:
   ## Postgres Meta
   - name: meta
     _comment: "pg-meta: /pg/* (used by Studio)"
-    url: http://meta:8080/
+    url: http://spn-${PROJECT_REF}-meta-1:8080/
     routes:
       - name: meta-all
         strip_path: true
@@ -177,7 +177,7 @@ services:
   ## Edge Functions
   - name: functions-v1
     _comment: "Edge Runtime: /functions/v1/*"
-    url: http://edge-runtime:9000/
+    url: http://spn-${PROJECT_REF}-edge-runtime-1:9000/
     routes:
       - name: functions-v1-all
         strip_path: true

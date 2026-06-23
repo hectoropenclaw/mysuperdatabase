@@ -17,7 +17,7 @@ CONTROL_DB_USER="${CONTROL_DB_USER:-postgres}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 COMPOSE_FILE="$REPO_ROOT/infra/projects/$PROJECT_REF/docker-compose.yml"
-HOST_HEADER="${HOST_HEADER:-${PROJECT_REF}.db.hconsulting.app}"
+HOST_HEADER="${HOST_HEADER:-${PROJECT_REF}-db.hconsulting.app}"
 
 if [[ ! "$PROJECT_REF" =~ ^[a-z0-9]{6,32}$ ]]; then
   echo "[FAIL] Invalid project ref: $PROJECT_REF" >&2

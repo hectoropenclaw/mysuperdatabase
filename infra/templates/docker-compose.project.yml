@@ -6,7 +6,7 @@
 #   SERVICE_KEY     — JWT signed with role=service_role
 #   DB_PASSWORD     — PostgreSQL superuser password
 #   SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS / SMTP_SENDER_NAME
-#   SITE_URL        — public URL of the project (https://${PROJECT_REF}.db.hconsulting.app)
+#   SITE_URL        — public URL of the project (https://${PROJECT_REF}-db.hconsulting.app)
 
 name: spn-${PROJECT_REF}
 
@@ -158,7 +158,7 @@ services:
       - ./kong/${PROJECT_REF}.yml:/home/kong/kong.yml:ro
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.spn-${PROJECT_REF}.rule=Host(`${PROJECT_REF}.db.hconsulting.app`)"
+      - "traefik.http.routers.spn-${PROJECT_REF}.rule=Host(`${PROJECT_REF}-db.hconsulting.app`) || Host(`${PROJECT_REF}.db.hconsulting.app`)"
       # Coolify's Traefik uses the 'https' entrypoint (not 'websecure') and only
       # defines the 'letsencrypt' resolver. These projects sit behind the
       # Cloudflare tunnel (noTLSVerify), so Traefik's default cert is fine — no
@@ -193,9 +193,11 @@ services:
     environment:
       ANON_KEY: ${ANON_KEY}
       SERVICE_KEY: ${SERVICE_KEY}
-      POSTGREST_URL: http://rest:3000
+      POSTGREST_URL: http://spn-${PROJECT_REF}-rest-1:3000
       PGRST_JWT_SECRET: ${JWT_SECRET}
-      DATABASE_URL: postgres://supabase_storage_admin:${DB_PASSWORD}@db:5432/postgres
+      # Storage also joins the shared coolify network, so generic service names
+      # can collide with another tenant. Keep all database traffic tenant-bound.
+      DATABASE_URL: postgres://supabase_storage_admin:${DB_PASSWORD}@spn-${PROJECT_REF}-db-1:5432/postgres
       FILE_SIZE_LIMIT: 52428800
       STORAGE_BACKEND: s3
       GLOBAL_S3_BUCKET: spn-${PROJECT_REF}

@@ -68,7 +68,7 @@ resolve_env_default() {
 
 SITE_URL="${SITE_URL:-$(json_get site_url)}"
 SITE_URL="${SITE_URL:-$(compose_get SUPABASE_PUBLIC_URL)}"
-SITE_URL="${SITE_URL:-https://${PROJECT_REF}.db.hconsulting.app}"
+SITE_URL="${SITE_URL:-https://${PROJECT_REF}-db.hconsulting.app}"
 
 ANON_KEY="$(json_get anon_key)"
 ANON_KEY="${ANON_KEY:-$(compose_get SUPABASE_ANON_KEY)}"
