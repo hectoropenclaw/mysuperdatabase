@@ -35,12 +35,13 @@ fi
 # Read existing auth.env to get SITE_URL, JWT_SECRET, DB_PASSWORD if not provided
 if [[ -f "$PROJECT_DIR/auth.env" ]]; then
   # Source only the core vars we need for template rendering
-  _src=$(grep -E "^(GOTRUE_DB_DATABASE_URL|GOTRUE_SITE_URL|GOTRUE_JWT_SECRET)=" "$PROJECT_DIR/auth.env" || true)
+  _src=$(grep -E "^(GOTRUE_DB_DATABASE_URL|API_EXTERNAL_URL|GOTRUE_SITE_URL|GOTRUE_JWT_SECRET)=" "$PROJECT_DIR/auth.env" || true)
   eval "$_src" 2>/dev/null || true
 fi
 
 # Derive template vars from already-set env
-export SITE_URL="${SITE_URL:-$GOTRUE_SITE_URL}"
+export SITE_URL="${SITE_URL:-${API_EXTERNAL_URL:-$GOTRUE_SITE_URL}}"
+export APP_URL="${APP_URL:-${GOTRUE_SITE_URL:-$SITE_URL}}"
 export JWT_SECRET="${JWT_SECRET:-$GOTRUE_JWT_SECRET}"
 
 # Extract DB_PASSWORD from the GoTrue DB URL if not set

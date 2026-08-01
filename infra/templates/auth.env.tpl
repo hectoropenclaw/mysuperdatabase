@@ -8,7 +8,7 @@ GOTRUE_API_PORT=9999
 API_EXTERNAL_URL=${SITE_URL}
 GOTRUE_DB_DRIVER=postgres
 GOTRUE_DB_DATABASE_URL=postgres://supabase_auth_admin:${DB_PASSWORD}@db:5432/postgres
-GOTRUE_SITE_URL=${SITE_URL}
+GOTRUE_SITE_URL=${APP_URL}
 GOTRUE_URI_ALLOW_LIST=*
 
 # ─── JWT ──────────────────────────────────────────────────────────────────

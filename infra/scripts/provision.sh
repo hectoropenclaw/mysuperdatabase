@@ -128,6 +128,7 @@ ANON_KEY=$(make_jwt "anon" "$JWT_SECRET")
 SERVICE_KEY=$(make_jwt "service_role" "$JWT_SECRET")
 REALTIME_SECRET_KEY_BASE=$(openssl rand -hex 64)
 SITE_URL="https://${PROJECT_REF}-db.hconsulting.app"
+APP_URL="${APP_URL:-$SITE_URL}"  # URL publica de la app para GOTRUE_SITE_URL; override por proyecto (rhgo=https://hconsulting.app)
 
 echo "→ Provisioning project: $PROJECT_REF"
 echo "  site_url:    $SITE_URL"
@@ -135,7 +136,7 @@ echo "  anon_key:    ${ANON_KEY:0:20}..."
 echo "  service_key: ${SERVICE_KEY:0:20}..."
 
 # ─── Export all template variables (no :-default in templates) ────────────────
-export PROJECT_REF JWT_SECRET ANON_KEY SERVICE_KEY DB_PASSWORD SITE_URL REALTIME_SECRET_KEY_BASE
+export PROJECT_REF JWT_SECRET ANON_KEY SERVICE_KEY DB_PASSWORD SITE_URL APP_URL REALTIME_SECRET_KEY_BASE
 
 export SMTP_HOST="${SMTP_HOST:-smtp.hconsulting.app}"
 export SMTP_PORT="${SMTP_PORT:-587}"
