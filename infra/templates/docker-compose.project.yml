@@ -150,6 +150,8 @@ services:
       KONG_PLUGINS: request-transformer,cors,key-auth,acl,basic-auth,rate-limiting
       KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
       KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
+      # Confía en los X-Forwarded-* de Traefik para que TUS devuelva Location https sin :8000.
+      KONG_TRUSTED_IPS: 0.0.0.0/0,::/0
       SUPABASE_ANON_KEY: ${ANON_KEY}
       SUPABASE_SERVICE_KEY: ${SERVICE_KEY}
       DASHBOARD_USERNAME: ${DASHBOARD_USERNAME:-admin}
